@@ -13,6 +13,7 @@ import {
   TouchableOpacity, TouchableWithoutFeedback, View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAppContext } from '../../AppContext';
 import { auth, database } from '../../firebaseConfig';
 
 const initialCategories = [
@@ -22,6 +23,7 @@ const initialCategories = [
 const AddIncomeScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { isDarkMode } = useAppContext();
 
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -62,7 +64,7 @@ const AddIncomeScreen = () => {
       amount: amountValue.toString(),
       category: useCustomCategory ? customCategory : selectedCategory,
       note,
-      date: date.toISOString().split('T')[0],
+      date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
       time: new Date().toLocaleTimeString(),
     };
 
@@ -100,6 +102,8 @@ const AddIncomeScreen = () => {
       setAmount(text);
     }
   };
+
+  const styles = getStyles(isDarkMode);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -223,15 +227,15 @@ const AddIncomeScreen = () => {
 
 export default AddIncomeScreen;
 
-const styles = StyleSheet.create({
+const getStyles = (isDarkMode) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F9F9F9',
+    backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   container: {
     padding: 20,
-    backgroundColor: '#F9F9F9',
+    backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
   },
   title: {
     fontSize: 22,
@@ -242,25 +246,25 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
     marginTop: 12,
     fontFamily: 'serif',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#D3D3D3',
+    borderColor: isDarkMode ? '#555' : '#D3D3D3',
     padding: 10,
     borderRadius: 5,
     fontSize: 16,
     marginTop: 6,
-    backgroundColor: '#fff',
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     fontFamily: 'serif',
   },
   tealInput: {
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
   },
   tealText: {
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
     fontFamily: 'serif',
   },
   categoryWrap: {
@@ -274,7 +278,7 @@ const styles = StyleSheet.create({
     padding: 8,
     margin: 4,
     borderRadius: 8,
-    backgroundColor: '#fff',
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
   },
   catBoxSelected: {
     backgroundColor: '#800080',

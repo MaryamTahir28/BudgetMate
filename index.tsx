@@ -1,8 +1,8 @@
 // app/index.tsx
-import HomeScreen from './screens/HomeScreen';
+import LoginScreen from './screens/LoginScreen';
 
 
 export default function index() {
-  return <HomeScreen />;
+  return <LoginScreen />;
 }
 

@@ -3,19 +3,22 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { getDatabase, off, onValue, ref, remove } from 'firebase/database';
+import { get, getDatabase, off, onValue, ref, remove, update } from 'firebase/database';
 import { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
+  Modal,
   Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
+import { Calendar } from 'react-native-calendars';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { app, auth, database } from '../../firebaseConfig';
 
@@ -34,8 +37,11 @@ const categoryIcons = {
   Other: 'dots-horizontal',
 };
 
+import { useAppContext } from '../../AppContext';
+
 const HomeScreen = () => {
   const router = useRouter();
+  const { currency, formatAmount, isDarkMode } = useAppContext();
   const [activeScreen, setActiveScreen] = useState('home');
   const [activeTab, setActiveTab] = useState('expenses');
   const [balanceVisible, setBalanceVisible] = useState(false);
@@ -44,6 +50,67 @@ const HomeScreen = () => {
   const [expandedItems, setExpandedItems] = useState({});
   const { type } = useLocalSearchParams();
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [selectedDateRange, setSelectedDateRange] = useState({
+    startDate: null,
+    endDate: null
+  });
+  const [currentMonthText, setCurrentMonthText] = useState('May 2025 ▼');
+
+  // Function to handle date selection from calendar
+  const handleDateSelect = (day) => {
+    const selectedDate = new Date(day.dateString);
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    const monthName = monthNames[selectedDate.getMonth()];
+    const year = selectedDate.getFullYear();
+    
+    // Set the start and end dates for the selected month
+    const startDate = new Date(year, selectedDate.getMonth(), 1);
+    const endDate = new Date(year, selectedDate.getMonth() + 1, 0);
+    
+    setSelectedDateRange({
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0]
+    });
+    console.log('Selected date range:', startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]);
+    
+    setCurrentMonthText(`${monthName} ${year} ▼`);
+    setShowCalendar(false);
+  };
+
+  // Function to handle individual date selection
+  const handleIndividualDateSelect = (day) => {
+    const selectedDate = new Date(day.dateString);
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    const monthName = monthNames[selectedDate.getMonth()];
+    const dayOfMonth = selectedDate.getDate();
+    const year = selectedDate.getFullYear();
+    
+    // Set the same date for both start and end to filter for a single day
+    setSelectedDateRange({
+      startDate: selectedDate.toISOString().split('T')[0],
+      endDate: selectedDate.toISOString().split('T')[0]
+    });
+    console.log('Selected single date:', selectedDate.toISOString().split('T')[0]);
+    
+    setCurrentMonthText(`${monthName} ${dayOfMonth}, ${year} ▼`);
+    setShowCalendar(false);
+  };
+
+  // Function to clear date filter
+  const clearDateFilter = () => {
+    setSelectedDateRange({
+      startDate: null,
+      endDate: null
+    });
+    setCurrentMonthText('All Time ▼');
+    setShowCalendar(false);
+  };
 
   useEffect(() => {
     if (type === 'income' || type === 'expense') {
@@ -114,9 +181,25 @@ const HomeScreen = () => {
     const userId = auth.currentUser?.uid || 'guest';
     const deleteRef = ref(database, `/users/${userId}/${type}/${firebaseKey}`);
 
+    // Find the item to get its details for budget update
+    const itemToDelete = list.find(item => item.firebaseKey === firebaseKey);
+
     const confirmAndDelete = () => {
       remove(deleteRef)
-        .then(() => {
+        .then(async () => {
+          // If it's an expense with a budgetId, update the budget's used amount
+          if (type === 'expenses' && itemToDelete?.budgetId) {
+            const budgetRef = ref(database, `/users/${userId}/budgets/${itemToDelete.budgetId}`);
+            // Get current budget data
+            const budgetSnapshot = await get(budgetRef);
+            if (budgetSnapshot.exists()) {
+              const budgetData = budgetSnapshot.val();
+              const currentUsed = budgetData.used || 0;
+              const newUsed = Math.max(0, currentUsed - parseFloat(itemToDelete.amount || 0));
+              await update(budgetRef, { used: newUsed });
+            }
+          }
+
           const successMsg = `${type === 'expenses' ? 'Expense' : 'Income'} deleted successfully.`;
           if (Platform.OS === 'web') {
             window.alert(successMsg);
@@ -166,20 +249,56 @@ const HomeScreen = () => {
   const expenseTotal = expenses.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
   const totalBalance = incomeTotal - expenseTotal;
 
+  const filteredList = list.filter(item => 
+    item.category.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const renderGroupedExpenses = () => {
-    return Object.entries(groupedByDate).map(([dateLabel, items]) => (
+    const groupedData = {};
+   let itemsToRender = searchQuery ? filteredList : sortedList;
+
+    // Apply date filter if dates are selected
+    if (selectedDateRange.startDate && selectedDateRange.endDate) {
+      itemsToRender = itemsToRender.filter(item => {
+        const itemDate = new Date(item.date);
+        const startDate = new Date(selectedDateRange.startDate);
+        const endDate = new Date(selectedDateRange.endDate);
+        
+        // Set time to midnight for proper date comparison
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
+        itemDate.setHours(0, 0, 0, 0);
+        
+        console.log('Filtering:', {
+          itemDate: itemDate.toISOString().split('T')[0],
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+          originalItemDate: item.date,
+          isInRange: itemDate >= startDate && itemDate <= endDate
+        });
+        
+        return itemDate >= startDate && itemDate <= endDate;
+      });
+    }
+
+    itemsToRender.forEach(item => {
+      const date = new Date(item.date);
+      const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
+      const label = date.toLocaleDateString(undefined, options);
+      if (!groupedData[label]) groupedData[label] = [];
+      groupedData[label].push(item);
+    });
+
+    return Object.entries(groupedData).map(([dateLabel, items]) => (
       <View key={dateLabel}>
         <Text style={styles.dateGroupLabel}>{dateLabel}</Text>
         {items.map((item) => (
           <TouchableOpacity
             key={item.firebaseKey}
             onPress={() => toggleNote(item.firebaseKey)}
-            
             style={styles.expenseItem}
             activeOpacity={0.9}
           >
-            
             <View style={styles.expenseLeft}>
               <View style={styles.iconCircle}>
                 <MaterialCommunityIcons
@@ -203,21 +322,21 @@ const HomeScreen = () => {
                   activeTab === 'income' && { color: 'green' }
                 ]}
               >
-                PKR {activeTab === 'expenses' ? '-' : '+'}
-                {parseFloat(item.amount).toLocaleString()}
+                {activeTab === 'expenses' ? '-' : '+'}
+                {formatAmount(item.amount)}
               </Text>
-
               <View style={styles.actions}>
                 <TouchableOpacity
                   onPress={() => {
                     router.push({ pathname: activeTab === 'expenses' ? '/addexpense' : '/addincome', params: { ...item } });
                   }}
-                  style={{ marginRight: 10 }}
+                  style={styles.editButton}
                 >
                   <MaterialCommunityIcons name="pencil" size={20} color="#003366" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => deleteItem(item.firebaseKey, activeTab === 'expenses' ? 'expenses' : 'incomes')}
+                  style={styles.deleteButton}
                 >
                   <MaterialCommunityIcons name="delete" size={20} color="red" />
                 </TouchableOpacity>
@@ -226,12 +345,38 @@ const HomeScreen = () => {
           </TouchableOpacity>
         ))}
       </View>
-      
     ));
   };
 
+  const styles = getStyles(isDarkMode);
+
   return (
-    <SafeAreaView style={styles.container}>
+    <>
+      <Modal
+        visible={showCalendar}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCalendar(false)}
+      >
+        <View style={styles.modalContainer}>
+          <Calendar
+            onDayPress={handleIndividualDateSelect}
+            markedDates={{
+              [selectedDateRange.startDate]: { selected: true, marked: true },
+              [selectedDateRange.endDate]: { selected: true, marked: true },
+            }}
+          />
+          <View style={styles.calendarButtons}>
+            <TouchableOpacity onPress={clearDateFilter} style={styles.clearButton}>
+              <Text style={styles.clearButtonText}>Clear Filter</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowCalendar(false)} style={styles.closeButton}>
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      <SafeAreaView style={styles.container}>
       <View style={styles.topSection}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -241,8 +386,8 @@ const HomeScreen = () => {
             />
             <Text style={styles.headerText}>BudgetMate</Text>
           </View>
-          <TouchableOpacity>
-            <Text style={styles.monthButton}>May 2025 ▼</Text>
+          <TouchableOpacity onPress={() => setShowCalendar(true)}>
+            <Text style={styles.monthButton}>{currentMonthText}</Text>
           </TouchableOpacity>
         </View>
 
@@ -250,7 +395,7 @@ const HomeScreen = () => {
           <Text style={styles.balanceText}>Total Balance</Text>
           <View style={styles.balanceAmount}>
             <Text style={styles.asterisks}>
-              {balanceVisible ? `PKR ${totalBalance.toLocaleString()}` : '******'}
+              {balanceVisible ? formatAmount(totalBalance) : '******'}
             </Text>
             <TouchableOpacity onPress={() => setBalanceVisible(!balanceVisible)}>
               <Ionicons
@@ -262,7 +407,6 @@ const HomeScreen = () => {
             </TouchableOpacity>
           </View>
         </View>
-
 
         <View style={styles.tabRow}>
           <TouchableOpacity
@@ -289,14 +433,21 @@ const HomeScreen = () => {
         <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
           {list.length > 0 ? (
             <>
+              <TextInput
+                style={styles.searchBar}
+                placeholder="Search by category..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+
               <View style={styles.totalCard}>
-              <Text style={styles.totalLabel}>
-                {activeTab === 'expenses' ? 'Total expenditure' : 'Total income'}
-              </Text>
-              <Text style={styles.totalAmount}>
-                PKR {activeTab === 'expenses' ? expenseTotal.toLocaleString() : incomeTotal.toLocaleString()}
-              </Text>
-            </View>
+                <Text style={styles.totalLabel}>
+                  {activeTab === 'expenses' ? 'Total expenditure' : 'Total income'}
+                </Text>
+                <Text style={styles.totalAmount}>
+                  {formatAmount(activeTab === 'expenses' ? expenseTotal : incomeTotal)}
+                </Text>
+              </View>
 
               {renderGroupedExpenses()}
             </>
@@ -322,7 +473,7 @@ const HomeScreen = () => {
           style={styles.footerItem}
           onPress={() => setActiveScreen('home')}
         >
-          <Icon name="home" size={24} color={activeScreen === 'home' ? '#003366' : '#333'} />
+          <Icon name="home" size={24} color={activeScreen === 'home' ? '#003366' : (isDarkMode ? '#ccc' : '#333')} />
           <Text style={[styles.iconLabel, activeScreen === 'home' && { color: '#003366', fontWeight: 'bold' }]}>Home</Text>
         </TouchableOpacity>
 
@@ -330,7 +481,7 @@ const HomeScreen = () => {
           style={styles.footerItem}
           onPress={() => router.push('/budget')}
         >
-          <Icon name="cash-multiple" size={24} color={activeScreen === 'budget' ? '#003366' : '#333'} />
+          <Icon name="cash-multiple" size={24} color={activeScreen === 'budget' ? '#003366' : (isDarkMode ? '#ccc' : '#333')} />
           <Text style={[styles.iconLabel, activeScreen === 'budget' && { color: '#003366', fontWeight: 'bold' }]}>Budget</Text>
         </TouchableOpacity>
 
@@ -347,12 +498,11 @@ const HomeScreen = () => {
           <Icon name="plus" size={28} color="#fff" />
         </TouchableOpacity>
 
-
         <TouchableOpacity
           style={styles.footerItem}
-          onPress={() => setActiveScreen('statistics')}
+          onPress={() => router.push('/statistics')}
         >
-          <Icon name="chart-line" size={24} color={activeScreen === 'statistics' ? '#003366' : '#333'} />
+          <Icon name="chart-line" size={24} color={activeScreen === 'statistics' ? '#003366' : (isDarkMode ? '#ccc' : '#333')} />
           <Text style={[styles.iconLabel, activeScreen === 'statistics' && { color: '#003366', fontWeight: 'bold' }]}>Statistics</Text>
         </TouchableOpacity>
 
@@ -360,24 +510,25 @@ const HomeScreen = () => {
           style={styles.footerItem}
          onPress={() => router.push('/settings')}
         >
-          <Icon name="cog" size={24} color={activeScreen === 'settings' ? '#003366' : '#333'} />
+          <Icon name="cog" size={24} color={activeScreen === 'settings' ? '#003366' : (isDarkMode ? '#ccc' : '#333')} />
           <Text style={[styles.iconLabel, activeScreen === 'settings' && { color: '#003366', fontWeight: 'bold' }]}>Settings</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
+    </>
   );
 };
 
 export default HomeScreen;
 
-const styles = StyleSheet.create({
+const getStyles = (isDarkMode) => StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
-    backgroundColor: '#F9F9F9',
+    backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
   },
   container: {
     flex: 1,
-    backgroundColor: '#F9F9F9',
+    backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
   },
   topSection: {
     paddingHorizontal: 20,
@@ -386,7 +537,7 @@ const styles = StyleSheet.create({
   middleSection: {
     flex: 1,
     paddingHorizontal: 20,
-    backgroundColor: '#F5E3FF',
+    backgroundColor: isDarkMode ? '#1E1E1E' : '#F5E3FF',
   },
   iconCircle: {
     backgroundColor: '#800080',
@@ -409,15 +560,15 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   headerText: {
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
     fontSize: 22,
     fontWeight: 'bold',
     fontFamily: 'serif',
   },
   monthButton: {
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
     borderWidth: 1,
-    borderColor: '#003366',
+    borderColor: isDarkMode ? '#555' : '#003366',
     padding: 6,
     borderRadius: 8,
     fontSize: 14,
@@ -427,7 +578,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 20,
     marginBottom: 8,
-    color: '#555',
+    color: isDarkMode ? '#ccc' : '#555',
     fontWeight: 'bold',
     fontFamily: 'serif',
   },
@@ -435,10 +586,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: 15,
-    backgroundColor: '#fff',
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     borderRadius: 12,
     marginBottom: 10,
-    borderColor: '#D3D3D3',
+    borderColor: isDarkMode ? '#555' : '#D3D3D3',
     borderWidth: 1,
     shadowColor: '#000',
     shadowOpacity: 0.1,
@@ -453,12 +604,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   expenseCategory: {
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
     fontWeight: 'bold',
     fontFamily: 'serif',
   },
   expenseDate: {
-    color: '#999',
+    color: isDarkMode ? '#ccc' : '#999',
     fontSize: 12,
     fontFamily: 'serif',
   },
@@ -469,24 +620,35 @@ const styles = StyleSheet.create({
   },
   expenseTime: {
     fontSize: 12,
-    color: '#888',
+    color: isDarkMode ? '#ccc' : '#888',
     fontFamily: 'serif',
   },
   expenseNote: {
   marginTop: 4,
   fontSize: 12,
-  color: '#333',
+  color: isDarkMode ? '#ccc' : '#333',
   fontStyle: 'italic',
   fontFamily: 'serif',
 },
   actions: {
     flexDirection: 'row',
     marginTop: 4,
+    gap: 10,
+  },
+  editButton: {
+    padding: 6,
+    borderRadius: 4,
+    backgroundColor: isDarkMode ? '#3A3A3A' : '#f0f8ff',
+  },
+  deleteButton: {
+    padding: 6,
+    borderRadius: 4,
+    backgroundColor: isDarkMode ? '#3A3A3A' : '#fff0f0',
   },
   totalCard: {
     marginTop: 20,
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     borderRadius: 12,
     padding: 15,
     alignItems: 'center',
@@ -495,7 +657,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   totalLabel: {
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
     fontWeight: 'bold',
     fontSize: 15,
     marginLeft: 10,
@@ -503,7 +665,7 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
   },
   totalAmount: {
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
     fontWeight: 'bold',
     fontFamily: 'serif',
   },
@@ -535,7 +697,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     borderRadius: 30,
     overflow: 'hidden',
-    backgroundColor: '#fff',
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     paddingVertical: 5,
   },
   tabItem: {
@@ -552,7 +714,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   tabText: {
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
     marginLeft: 6,
     fontWeight: 'bold',
     fontFamily: 'serif',
@@ -573,7 +735,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   emptyText: {
-    color: '#888',
+    color: isDarkMode ? '#ccc' : '#888',
     fontSize: 16,
     fontStyle: 'italic',
     fontFamily: 'serif',
@@ -582,16 +744,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: 10,
-    backgroundColor: '#fff',
+    backgroundColor: isDarkMode ? '#1E1E1E' : '#fff',
     borderTopWidth: 1,
-    borderColor: '#D3D3D3',
+    borderColor: isDarkMode ? '#555' : '#D3D3D3',
   },
   footerItem: {
     alignItems: 'center',
   },
   iconLabel: {
     fontSize: 12,
-    color: '#333',
+    color: isDarkMode ? '#ccc' : '#333',
     marginTop: 4,
     fontFamily: 'serif',
   },
@@ -617,9 +779,58 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: 15,
-    backgroundColor: '#fff',
+    backgroundColor: isDarkMode ? '#1E1E1E' : '#fff',
     borderTopWidth: 1,
-    borderColor: '#D3D3D3',
+    borderColor: isDarkMode ? '#555' : '#D3D3D3',
     marginTop: 30,
+  },
+  searchBar: {
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
+    padding: 12,
+    borderRadius: 25,
+    marginTop: 15,
+    borderWidth: 1,
+    borderColor: isDarkMode ? '#555' : '#003366',
+    fontSize: 16,
+    color: isDarkMode ? '#fff' : '#003366',
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.5)',
+  },
+  calendarButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingHorizontal: 20,
+    marginTop: 20,
+  },
+  clearButton: {
+    backgroundColor: '#800080',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  clearButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    backgroundColor: '#003366',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    flex: 1,
+    marginLeft: 10,
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

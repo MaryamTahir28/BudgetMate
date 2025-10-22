@@ -1,4 +1,4 @@
-//BudgetScreen.js
+//WishlistScreen.js
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
 import { onValue, push, ref, remove } from "firebase/database";
@@ -19,52 +19,83 @@ import {
 import { useAppContext } from "../../AppContext";
 import { auth, database } from "../../firebaseConfig";
 
-export default function BudgetScreen() {
+export default function WishlistScreen() {
 
   const router = useRouter();
-  const { isDarkMode, formatAmount, convertToPKR } = useAppContext();
+  const { isDarkMode, formatAmount, currency, convertFromPKR, convertToPKR } = useAppContext();
 
-  const [category, setCategory] = useState("");
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
-  const [budgets, setBudgets] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
 
-  // Load budgets
   useEffect(() => {
-    const userId = auth.currentUser?.uid || "guest";
-    const budgetsRef = ref(database, `users/${userId}/budgets`);
-    onValue(budgetsRef, (snapshot) => {
+    if (auth.currentUser) {
+      setUser(auth.currentUser);
+      setAuthChecked(true);
+    }
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setUser(user);
+      setAuthChecked(true);
+    });
+    return unsubscribe;
+  }, [router, authChecked]);
+
+  // Load wishlist
+  useEffect(() => {
+    if (!user) return;
+    const wishlistRef = ref(database, `users/${user.uid}/wishlist`);
+    onValue(wishlistRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
-        const loadedBudgets = Object.keys(data).map((key) => ({
+        const loadedItems = Object.keys(data).map((key) => ({
           id: key,
           ...data[key],
         }));
-        setBudgets(loadedBudgets);
+        setWishlist(loadedItems);
       } else {
-        setBudgets([]);
+        setWishlist([]);
       }
     });
-  }, []);
+  }, [user]);
 
-  // Add budget
-  const addBudget = () => {
-    if (!category || !amount) return;
-    const userId = auth.currentUser?.uid || "guest";
-    const amountInPKR = convertToPKR(amount);
-    push(ref(database, `users/${userId}/budgets`), {
-      category,
-      amount: amountInPKR,
-      used: 0,
-    });
-    setCategory("");
-    setAmount("");
+  // Add wishlist item
+  const addWishlistItem = async () => {
+    if (!user) {
+      Alert.alert("Error", "User not logged in");
+      return;
+    }
+    if (!name || !amount) {
+      Alert.alert("Error", "Please fill both item name and amount");
+      return;
+    }
+    const amountValue = parseFloat(amount);
+    if (isNaN(amountValue) || amountValue <= 0) {
+      Alert.alert("Error", "Please enter a valid positive amount");
+      return;
+    }
+    try {
+      // Convert to PKR before saving
+      const pkrAmount = convertToPKR(amountValue);
+      await push(ref(database, `users/${user.uid}/wishlist`), {
+        name,
+        amount: pkrAmount,
+        createdAt: new Date().toISOString(),
+      });
+      Alert.alert("Success", "Item added to wishlist");
+      setName("");
+      setAmount("");
+    } catch (error) {
+      Alert.alert("Error", "Failed to add item: " + error.message);
+    }
   };
 
-  // Handle budget deletion
+  // Handle wishlist deletion
   const handleDelete = (id) => {
     Alert.alert(
-      "Delete Budget",
-      "Are you sure you want to delete this budget?",
+      "Delete Item",
+      "Are you sure you want to delete this item?",
       [
         {
           text: "Cancel",
@@ -73,8 +104,8 @@ export default function BudgetScreen() {
         {
           text: "Delete",
           onPress: () => {
-            const userId = auth.currentUser?.uid || "guest";
-            remove(ref(database, `users/${userId}/budgets/${id}`));
+            if (!user) return;
+            remove(ref(database, `users/${user.uid}/wishlist/${id}`));
           }
         }
       ]
@@ -86,18 +117,19 @@ export default function BudgetScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Manage Budgets</Text>
+        <Text style={styles.title}>Manage Wishlist</Text>
 
-        <Text style={styles.label}>Category</Text>
+        <Text style={styles.label}>Item Name</Text>
         <TextInput
           style={[styles.input, styles.tealInput]}
-          placeholder="e.g. Shopping, Food"
-          value={category}
-          onChangeText={setCategory}
+          placeholder="e.g. Laptop, Phone"
+          value={name}
+          onChangeText={setName}
           placeholderTextColor="#aaa"
+          autoCorrect={false}
         />
 
-        <Text style={styles.label}>Budget Amount</Text>
+        <Text style={styles.label}>Required Amount</Text>
         <TextInput
           style={[styles.input, styles.tealInput]}
           placeholder="Enter amount"
@@ -115,33 +147,28 @@ export default function BudgetScreen() {
             }
           }}
           placeholderTextColor="#aaa"
+          autoCorrect={false}
         />
 
-        <TouchableOpacity style={styles.saveButton} onPress={addBudget}>
-          <Text style={styles.saveText}>Add Budget</Text>
+        <TouchableOpacity style={styles.saveButton} onPress={addWishlistItem}>
+          <Text style={styles.saveText}>Add Item</Text>
         </TouchableOpacity>
 
         <FlatList
-          data={budgets}
+          data={wishlist}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <TouchableOpacity 
-              style={styles.card}
-              onPress={() => router.push({
-                pathname: "/budgetDetails",
-                params: { id: item.id, category: item.category }
-              })}
-            >
+            <View style={styles.card}>
               <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>{item.category}</Text>
+                <Text style={styles.cardTitle}>{item.name}</Text>
                 <View style={styles.iconContainer}>
-                  <TouchableOpacity 
-                    onPress={() => router.push({ pathname: "/editBudget", params: { id: item.id } })}
+                  <TouchableOpacity
+                    onPress={() => router.push({ pathname: "/editWishlist", params: { id: item.id } })}
                     style={styles.editButton}
                   >
                     <MaterialCommunityIcons name="pencil" size={20} color="#003366" />
                   </TouchableOpacity>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => handleDelete(item.id)}
                     style={styles.deleteButton}
                   >
@@ -149,10 +176,8 @@ export default function BudgetScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-              <Text style={styles.cardText}>Total: {formatAmount(item.amount)}</Text>
-              <Text style={styles.cardText}>Used: {formatAmount(item.used || 0)}</Text>
-              <Text style={styles.cardText}>Remaining: {formatAmount(item.amount - (item.used || 0))}</Text>
-            </TouchableOpacity>
+              <Text style={styles.cardText}>Amount: {formatAmount(item.amount)}</Text>
+            </View>
           )}
         />
       </ScrollView>

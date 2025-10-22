@@ -9,9 +9,9 @@ import {
   Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StatusBar,
   StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View
 } from 'react-native';
-import { Dropdown } from "react-native-paper-dropdown";
 
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAppContext } from '../../AppContext';
 import { auth, database } from '../../firebaseConfig';
 
 const initialCategories = [
@@ -22,6 +22,7 @@ const initialCategories = [
 const AddExpenseScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { isDarkMode } = useAppContext();
 
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState('');
@@ -33,14 +34,15 @@ const AddExpenseScreen = () => {
   const [customCategory, setCustomCategory] = useState('');
   const [useCustomCategory, setUseCustomCategory] = useState(false);
   const [categories, setCategories] = useState(initialCategories);
-  const [budgets, setBudgets] = useState([]);
+  const [budgets, setBudgets] = useState([]); // Ensure budgets is initialized as an empty array
   const [showDropDown, setShowDropDown] = useState(false);
   const [selectedBudget, setSelectedBudget] = useState(null); // ✅ added
   const [rent, setRent] = useState(''); // ✅ added
 
   // Load budgets from Firebase
   useEffect(() => {
-    const budgetsRef = ref(database, "budgets/");
+    const userId = auth.currentUser?.uid || "guest";
+    const budgetsRef = ref(database, `users/${userId}/budgets`);
     onValue(budgetsRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
@@ -51,7 +53,7 @@ const AddExpenseScreen = () => {
         }));
         setBudgets(loadedBudgets);
       } else {
-        setBudgets([]);
+        setBudgets([]); // Ensure budgets is set to an empty array if no data exists
       }
     });
   }, []);
@@ -86,7 +88,7 @@ const AddExpenseScreen = () => {
       note,
       rent: rent ? parseFloat(rent) : 0,
       budgetId: selectedBudget,
-      date: date.toISOString().split('T')[0],
+      date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
       time: new Date().toLocaleTimeString(),
     };
 
@@ -102,19 +104,27 @@ const AddExpenseScreen = () => {
         Alert.alert('Success', 'Expense saved.');
 
         // ✅ Update budget if linked
-        // ✅ Safe find with optional chaining
-if (selectedBudget && Array.isArray(budgets)) {
-  const budget = budgets.find((b) => String(b.value) === String(selectedBudget));
-  if (budget) {
-    const newUsed = (budget.used || 0) + amountValue;
-    await update(ref(database, `budgets/${selectedBudget}`), { used: newUsed });
-  } else {
-    console.warn("⚠️ Budget not found for:", selectedBudget);
-  }
-} else {
-  console.warn("⚠️ No budgets available or no budget selected");
-}
-
+        // ✅ Safe budget lookup without using find method
+      if (selectedBudget && Array.isArray(budgets) && budgets.length > 0) {
+        let budgetFound = null;
+        // Use a simple for loop instead of find method
+        for (let i = 0; i < budgets.length; i++) {
+          if (String(budgets[i].value) === String(selectedBudget)) {
+            budgetFound = budgets[i];
+            break;
+          }
+        }
+        if (budgetFound) {
+          const userId = auth.currentUser?.uid || "guest";
+          const newUsed = (budgetFound.used || 0) + amountValue;
+          await update(ref(database, `users/${userId}/budgets/${selectedBudget}`), { used: newUsed });
+        } else {
+          console.warn("⚠️ Budget not found for:", selectedBudget);
+        }
+      } else {
+        console.warn("⚠️ No budgets available or no budget selected");
+      }
+      
       }
 
       router.replace('/home');
@@ -140,6 +150,8 @@ if (selectedBudget && Array.isArray(budgets)) {
     }
   };
 
+  const styles = getStyles(isDarkMode);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -161,7 +173,7 @@ if (selectedBudget && Array.isArray(budgets)) {
                 keyboardType="numeric"
                 style={[styles.input, styles.tealInput]}
                 placeholder="Enter amount"
-                placeholderTextColor="#aaa"
+                placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
               />
 
               <Text style={styles.label}>Date</Text>
@@ -215,7 +227,7 @@ if (selectedBudget && Array.isArray(budgets)) {
                     placeholder="Enter custom category"
                     value={customCategory}
                     onChangeText={setCustomCategory}
-                    placeholderTextColor="#aaa"
+                    placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
                   />
                   <TouchableOpacity style={styles.saveButton} onPress={handleSaveCustomCategory}>
                     <Text style={styles.saveText}>Save Category</Text>
@@ -223,48 +235,27 @@ if (selectedBudget && Array.isArray(budgets)) {
                 </>
               )}
 
-              {/* Budget Dropdown */}
-              {Platform.OS === "web" ? (
-  // 👉 Web: Simple Picker
-  <View style={[styles.input, { padding: 0 }]}>
-    <Picker
-      selectedValue={selectedBudget}
-      onValueChange={(itemValue) => setSelectedBudget(itemValue)}
-    >
-      <Picker.Item label="Select Budget" value={null} />
-      {budgets.map((b) => (
-        <Picker.Item
-          key={b.value}
-          label={`${b.category} (Remaining: ${b.amount - (b.used || 0)})`}
-          value={b.value}
-        />
-      ))}
-    </Picker>
-  </View>
-) : (
-  // 👉 Mobile: Paper Dropdown
-  <Dropdown
-    label={"Select Budget (optional)"}
-    mode={"outlined"}
-    visible={showDropDown}
-    showDropDown={() => setShowDropDown(true)}
-    onDismiss={() => setShowDropDown(false)}
-    value={selectedBudget}
-    setValue={setSelectedBudget}
-    list={budgets || []}
-  />
-)}
-
-              {/* Rent Input */}
-              <Text style={styles.label}>Rent (optional)</Text>
-              <TextInput
-                value={rent}
-                onChangeText={setRent}
-                keyboardType="numeric"
-                style={[styles.input, styles.tealInput]}
-                placeholder="Enter rent (if any)"
-                placeholderTextColor="#aaa"
-              />
+              <Text style={styles.label}>Budget</Text>
+              <View style={[styles.input, { padding: 0 }]}>
+                <Picker
+                  selectedValue={selectedBudget}
+                  onValueChange={(itemValue) => setSelectedBudget(itemValue)}
+                >
+                  <Picker.Item 
+                    label="Select Budget" 
+                    value={null} 
+                    style={{ color: '#aaa', fontFamily: 'serif' }} 
+                  />
+                  {budgets.map((b) => (
+                    <Picker.Item
+                      key={b.value}
+                      label={`${b.category} (Remaining: ${b.amount - (b.used || 0)})`}
+                      value={b.value}
+                      style={{ color: '#003366', fontFamily: 'serif' }}
+                    />
+                  ))}
+                </Picker>
+              </View>
 
               <Text style={styles.label}>Note</Text>
               <TextInput
@@ -272,7 +263,7 @@ if (selectedBudget && Array.isArray(budgets)) {
                 onChangeText={setNote}
                 style={[styles.input, styles.tealInput, { height: 80 }]}
                 placeholder="Add description (optional)"
-                placeholderTextColor="#aaa"
+                placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
                 multiline
               />
 
@@ -295,41 +286,41 @@ if (selectedBudget && Array.isArray(budgets)) {
 
 export default AddExpenseScreen;
 
-const styles = StyleSheet.create({
+const getStyles = (isDarkMode) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F9F9F9',
+    backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   container: {
     padding: 20,
-    backgroundColor: '#F9F9F9',
+    backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
   },
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#800080',
+    color: isDarkMode ? '#fff' : '#800080',
     fontFamily: 'serif',
     marginBottom: 15,
   },
   label: {
     fontSize: 16,
-    color: '#003366',
+    color: isDarkMode ? '#fff' : '#003366',
     marginTop: 12,
     fontFamily: 'serif',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#D3D3D3',
+    borderColor: isDarkMode ? '#333' : '#D3D3D3',
     padding: 10,
     borderRadius: 5,
     fontSize: 16,
     marginTop: 6,
-    backgroundColor: '#fff',
+    backgroundColor: isDarkMode ? '#1E1E1E' : '#fff',
     fontFamily: 'serif',
   },
-  tealInput: { color: '#003366' },
-  tealText: { color: '#003366', fontFamily: 'serif' },
+  tealInput: { color: isDarkMode ? '#fff' : '#003366' },
+  tealText: { color: isDarkMode ? '#fff' : '#003366', fontFamily: 'serif' },
   categoryWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -341,7 +332,7 @@ const styles = StyleSheet.create({
     padding: 8,
     margin: 4,
     borderRadius: 8,
-    backgroundColor: '#fff',
+    backgroundColor: isDarkMode ? '#1E1E1E' : '#fff',
   },
   catBoxSelected: {
     backgroundColor: '#800080',
