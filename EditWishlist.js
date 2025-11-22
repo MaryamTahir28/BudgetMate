@@ -25,6 +25,7 @@ export default function EditWishlist() {
   const [user, setUser] = useState(null);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
+  const [savedAmount, setSavedAmount] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -48,6 +49,9 @@ export default function EditWishlist() {
         // Convert from PKR to selected currency for display
         const displayAmount = convertFromPKR(data.amount);
         setAmount(displayAmount.toString());
+        // Load savedAmount, convert and show
+        const displaySaved = data.savedAmount ? convertFromPKR(parseFloat(data.savedAmount)) : 0;
+        setSavedAmount(displaySaved.toString());
       }
       setLoading(false);
     });
@@ -55,8 +59,8 @@ export default function EditWishlist() {
 
   // Update wishlist item
   const updateWishlistItem = () => {
-    if (!user || !name.trim() || !amount.trim()) {
-      Alert.alert("Error", "Please fill both item name and amount");
+    if (!user || !name.trim() || !amount.trim() || savedAmount === '') {
+      Alert.alert("Error", "Please fill item name, amount and saved amount");
       return;
     }
 
@@ -66,12 +70,20 @@ export default function EditWishlist() {
       return;
     }
 
+    const savedValue = parseFloat(savedAmount);
+    if (isNaN(savedValue) || savedValue < 0 || savedValue > amountValue) {
+      Alert.alert("Error", "Please enter a valid saved amount (0 or positive and no more than required amount)");
+      return;
+    }
+
     // Convert to PKR before saving
     const pkrAmount = convertToPKR(amountValue);
+    const pkrSaved = convertToPKR(savedValue);
 
     update(ref(database, `users/${user.uid}/wishlist/${id}`), {
       name: name.trim(),
       amount: pkrAmount.toString(),
+      savedAmount: pkrSaved.toString(),
     }).then(() => {
       Alert.alert("Success", "Wishlist item updated successfully");
       router.back();
@@ -123,6 +135,26 @@ export default function EditWishlist() {
               setAmount(parts[0] + '.' + parts.slice(1).join(''));
             } else {
               setAmount(numericValue);
+            }
+          }}
+          placeholderTextColor="#aaa"
+        />
+
+        <Text style={styles.label}>Saved Amount</Text>
+        <TextInput
+          style={[styles.input, styles.tealInput]}
+          placeholder="Saved Amount"
+          keyboardType="numeric"
+          value={savedAmount}
+          onChangeText={(text) => {
+            // Only allow positive numbers and decimals
+            const numericValue = text.replace(/[^0-9.]/g, '');
+            // Prevent multiple decimal points
+            const parts = numericValue.split('.');
+            if (parts.length > 2) {
+              setSavedAmount(parts[0] + '.' + parts.slice(1).join(''));
+            } else {
+              setSavedAmount(numericValue);
             }
           }}
           placeholderTextColor="#aaa"

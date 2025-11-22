@@ -154,32 +154,32 @@ export default function WishlistScreen() {
           <Text style={styles.saveText}>Add Item</Text>
         </TouchableOpacity>
 
-        <FlatList
-          data={wishlist}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>{item.name}</Text>
-                <View style={styles.iconContainer}>
-                  <TouchableOpacity
-                    onPress={() => router.push({ pathname: "/editWishlist", params: { id: item.id } })}
-                    style={styles.editButton}
-                  >
-                    <MaterialCommunityIcons name="pencil" size={20} color="#003366" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleDelete(item.id)}
-                    style={styles.deleteButton}
-                  >
-                    <MaterialCommunityIcons name="delete" size={20} color="red" />
-                  </TouchableOpacity>
-                </View>
+      <FlatList
+        data={wishlist}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <TouchableOpacity style={styles.card} onPress={() => router.push({ pathname: "/wishlistDetails", params: { id: item.id } })}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>{item.name}</Text>
+              <View style={styles.iconContainer}>
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: "/editWishlist", params: { id: item.id } })}
+                  style={styles.editButton}
+                >
+                  <MaterialCommunityIcons name="pencil" size={20} color="#003366" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDelete(item.id)}
+                  style={styles.deleteButton}
+                >
+                  <MaterialCommunityIcons name="delete" size={20} color="red" />
+                </TouchableOpacity>
               </View>
-              <Text style={styles.cardText}>Amount: {formatAmount(item.amount)}</Text>
             </View>
-          )}
-        />
+            <Text style={styles.cardText}>Amount: {formatAmount(item.amount)}</Text>
+          </TouchableOpacity>
+        )}
+      />
       </ScrollView>
     </SafeAreaView>
   );
