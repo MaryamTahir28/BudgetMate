@@ -22,7 +22,7 @@ const categoryIcons = {
 };
 
 const StatisticsScreen = () => {
-  const { isDarkMode, formatAmount, currency, convertFromPKR } = useAppContext();
+  const { isDarkMode, formatAmount, currency, convertFromPKR , formatConvertedAmount} = useAppContext();
 
   const [income, setIncome] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -268,18 +268,25 @@ const StatisticsScreen = () => {
             <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.chartScrollView}>
               <BarChart
                 data={barChartData}
-                width={Math.max(Dimensions.get('window').width - 40, barChartData.labels.length * 50)} // dynamic width for scrolling
+                width={Math.max(Dimensions.get('window').width - 40, barChartData.labels.length * 65)} // dynamic width for scrolling
                 height={220}
                 yAxisLabel={`${currency} `}
+                formatYLabel={(value) => `${parseInt(value)}`}  // remove decimals only
+
                 chartConfig={{
                   backgroundColor: isDarkMode ? '#121212' : '#fff',
                   backgroundGradientFrom: isDarkMode ? '#121212' : '#fff',
                   backgroundGradientTo: isDarkMode ? '#121212' : '#fff',
                   decimalPlaces: 0,
+                  propsForLabels: {
+                  dx: 10,   // 👈 Shift labels slightly right to make them visible
+                  },
                   color: (opacity = 1) => (isDarkMode ? `rgba(255, 255, 255, ${opacity})` : `rgba(0, 0, 0, ${opacity})`),
                   labelColor: (opacity = 1) => (isDarkMode ? `rgba(255, 255, 255, ${opacity})` : `rgba(0, 0, 0, ${opacity})`),
+                  //paddingLeft: 40,     // ✅ add left padding inside chart
+                  //paddingRight: 40,    // ✅ add right padding inside chart
                   style: {
-                    borderRadius: 16,
+                    borderRadius: 30,
                   },
                   propsForDots: {
                     r: '6',
@@ -339,7 +346,7 @@ const StatisticsScreen = () => {
                     </View>
                     <View style={styles.categoryRight}>
                       <Text style={styles.categoryAmount}>
-                        {formatAmount(amount)}
+                        {formatConvertedAmount(amount)}
                       </Text>
                       <Text style={styles.categoryPercentage}>
                         {getCategoryPercentage(amount)}%

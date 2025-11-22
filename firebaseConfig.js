@@ -1,8 +1,13 @@
-// firebaseConfig.js (outside app/ folder)
-
+//firebaseConfig.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { initializeApp } from 'firebase/app';
-import { getReactNativePersistence, initializeAuth } from 'firebase/auth';
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import {
+  getAuth,
+  getReactNativePersistence,
+  initializeAuth,
+} from 'firebase/auth';
+import { getDatabase } from 'firebase/database';
+import { Platform } from 'react-native';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAwfIQZNQ3jZ_J0BKEx4bdMbd2le9un2Jo',
@@ -15,13 +20,28 @@ const firebaseConfig = {
   measurementId: 'G-7DY34KGPX2',
 };
 
-const app = initializeApp(firebaseConfig);
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
+let auth;
 
-const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
-});
-console.log('Firebase initialized. Auth:', auth);
+if (Platform.OS === 'web') {
+  // Web: just getAuth, no persistence config needed, uses browser storage automatically
+  auth = getAuth(app);
+} else {
+  // React Native: use initializeAuth with AsyncStorage persistence
+  try {
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  } catch (error) {
+    if (error.code === 'auth/already-initialized') {
+      auth = getAuth(app);
+    } else {
+      throw error;
+    }
+  }
+}
+const database = getDatabase(app);
 
-export { app, auth };
+export { auth, database };
 

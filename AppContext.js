@@ -75,11 +75,16 @@ export const AppProvider = ({ children }) => {
 
   // Convert amount from PKR to selected currency
   const convertFromPKR = (amount, targetCurrency = currency) => {
-    if (!amount || isNaN(amount)) return 0;
-    const pkrAmount = parseFloat(amount);
-    const rate = CURRENCY_RATES[targetCurrency] || 1;
-    return pkrAmount * rate;
-  };
+  if (!amount || isNaN(amount)) return 0;
+
+  const pkrAmount = parseFloat(amount);
+  const rate = CURRENCY_RATES[targetCurrency] || 1;
+  const converted = pkrAmount * rate;
+
+  // Return value rounded to 2 decimal places
+  return parseFloat(converted.toFixed(2));
+};
+
 
   // Convert amount to PKR from selected currency
   const convertToPKR = (amount, sourceCurrency = currency) => {
@@ -111,6 +116,24 @@ export const AppProvider = ({ children }) => {
     })}`;
   };
 
+  const formatConvertedAmount = (amount) => {
+  const currencySymbols = {
+    PKR: 'PKR',
+    USD: '$',
+    EUR: '€',
+    GBP: '£',
+    JPY: '¥',
+    CAD: 'C$',
+    AUD: 'A$',
+  };
+  const symbol = currencySymbols[currency] || currency;
+  return `${symbol} ${amount.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+
   const value = {
     isDarkMode,
     currency,
@@ -120,6 +143,7 @@ export const AppProvider = ({ children }) => {
     convertFromPKR,
     convertToPKR,
     formatAmount,
+    formatConvertedAmount,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
