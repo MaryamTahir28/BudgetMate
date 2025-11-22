@@ -36,6 +36,7 @@ function RootLayoutContent() {
         <Stack.Screen name="statistics" options={{ headerShown: false }}/>
         <Stack.Screen name="wishlist" options={{ headerShown: false }}/>
         <Stack.Screen name="editWishlist" options={{ headerShown: false }}/>
+        <Stack.Screen name="wishlistDetails" options={{ headerShown: false }}/>
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style={isDarkMode ? 'light' : 'dark'} />

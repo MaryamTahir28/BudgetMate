@@ -57,6 +57,8 @@ const HomeScreen = () => {
     endDate: null
   });
   const [currentMonthText, setCurrentMonthText] = useState('May 2025 ▼');
+  // For override filter to show expenses of a specific month/year ignoring global date filter
+  const [expensesMonthOverride, setExpensesMonthOverride] = useState(null); // {month: 1-12, year: number} or null
 
   // Function to handle date selection from calendar
   const handleDateSelect = (day) => {
@@ -79,6 +81,8 @@ const HomeScreen = () => {
     
     setCurrentMonthText(`${monthName} ${year} ▼`);
     setShowCalendar(false);
+    // Clear override if user change global filter
+    setExpensesMonthOverride(null);
   };
 
   // Function to handle individual date selection
@@ -100,6 +104,8 @@ const HomeScreen = () => {
     
     setCurrentMonthText(`${monthName} ${dayOfMonth}, ${year} ▼`);
     setShowCalendar(false);
+    // Clear override if user change global filter
+    setExpensesMonthOverride(null);
   };
 
   // Function to clear date filter
@@ -110,6 +116,8 @@ const HomeScreen = () => {
     });
     setCurrentMonthText('All Time ▼');
     setShowCalendar(false);
+    // Clear override on clearing filter
+    setExpensesMonthOverride(null);
   };
 
   useEffect(() => {
@@ -274,43 +282,101 @@ const HomeScreen = () => {
     groupedByDate[label].push(item);
   });
 
-  const incomeTotal = income.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
-  const expenseTotal = expenses.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+  // Helper function to check if a date matches the override month/year
+  const isInOverrideMonth = (dateStr) => {
+    if (!expensesMonthOverride) return true;
+    const date = new Date(dateStr);
+    const month = date.getMonth();
+    const year = date.getFullYear();
+    return month === (expensesMonthOverride.month - 1) && year === expensesMonthOverride.year;
+  };
+
+  // Helper function to check if date is within filter range
+  const isWithinSelectedDateRange = (dateStr) => {
+    if (!selectedDateRange.startDate || !selectedDateRange.endDate) return true;
+    const itemDate = new Date(dateStr);
+    const startDate = new Date(selectedDateRange.startDate);
+    const endDate = new Date(selectedDateRange.endDate);
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999);
+    itemDate.setHours(0, 0, 0, 0);
+    return itemDate >= startDate && itemDate <= endDate;
+  };
+
+  // Sum of income within the selected date range or override if set (or all if no filter)
+  const incomeTotal = income
+    .filter(item => {
+      if (expensesMonthOverride) {
+        const date = new Date(item.date);
+        const month = date.getMonth() + 1;
+        const year = date.getFullYear();
+        return month === expensesMonthOverride.month && year === expensesMonthOverride.year;
+      }
+      return isWithinSelectedDateRange(item.date);
+    })
+    .reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+
+  // Sum of expenses considering override or date filter
+  const expenseTotal = expenses
+    .filter(item => (expensesMonthOverride ? isInOverrideMonth(item.date) : isWithinSelectedDateRange(item.date)))
+    .reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+
   const totalBalance = incomeTotal - expenseTotal;
 
+  // List for rendering considering override or date filter and search filter
   const filteredList = list.filter(item => 
     item.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // New function to handle when income item is clicked to show all expenses of that month
+  const handleIncomeClick = (item) => {
+    const date = new Date(item.date);
+    const month = date.getMonth() + 1;
+    const year = date.getFullYear();
+    setExpensesMonthOverride({ month, year });
+    setActiveTab('expenses');
+    setCurrentMonthText(`Expenses for ${month}/${year} ▼`);
+  };
+
   const renderGroupedExpenses = () => {
     const groupedData = {};
-   let itemsToRender = searchQuery ? filteredList : sortedList;
+    let itemsToRender = searchQuery ? filteredList : sortedList;
+
+    // Apply override month filter for expensesMonthOverride
+    if (expensesMonthOverride) {
+      itemsToRender = itemsToRender.filter(item => {
+        const date = new Date(item.date);
+        const month = date.getMonth() + 1;
+        const year = date.getFullYear();
+        return month === expensesMonthOverride.month && year === expensesMonthOverride.year;
+      });
+    }
 
     // Apply date filter if dates are selected
     if (selectedDateRange.startDate && selectedDateRange.endDate) {
-      itemsToRender = itemsToRender.filter(item => {
+      itemsToRender = itemsToRender.filter((item) => {
         const itemDate = new Date(item.date);
         const startDate = new Date(selectedDateRange.startDate);
         const endDate = new Date(selectedDateRange.endDate);
-        
+
         // Set time to midnight for proper date comparison
         startDate.setHours(0, 0, 0, 0);
         endDate.setHours(23, 59, 59, 999);
         itemDate.setHours(0, 0, 0, 0);
-        
+
         console.log('Filtering:', {
           itemDate: itemDate.toISOString().split('T')[0],
           startDate: startDate.toISOString().split('T')[0],
           endDate: endDate.toISOString().split('T')[0],
           originalItemDate: item.date,
-          isInRange: itemDate >= startDate && itemDate <= endDate
+          isInRange: itemDate >= startDate && itemDate <= endDate,
         });
-        
+
         return itemDate >= startDate && itemDate <= endDate;
       });
     }
 
-    itemsToRender.forEach(item => {
+    itemsToRender.forEach((item) => {
       const date = new Date(item.date);
       const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
       const label = date.toLocaleDateString(undefined, options);
@@ -324,7 +390,13 @@ const HomeScreen = () => {
         {items.map((item) => (
           <TouchableOpacity
             key={item.firebaseKey}
-            onPress={() => toggleNote(item.firebaseKey)}
+            onPress={() => {
+              if (activeTab === 'income') {
+                handleIncomeClick(item);
+              } else {
+                toggleNote(item.firebaseKey);
+              }
+            }}
             style={styles.expenseItem}
             activeOpacity={0.9}
           >
@@ -348,7 +420,7 @@ const HomeScreen = () => {
               <Text
                 style={[
                   styles.expenseAmount,
-                  activeTab === 'income' && { color: 'green' }
+                  activeTab === 'income' && { color: 'green' },
                 ]}
               >
                 {activeTab === 'expenses' ? '-' : '+'}
@@ -357,7 +429,10 @@ const HomeScreen = () => {
               <View style={styles.actions}>
                 <TouchableOpacity
                   onPress={() => {
-                    router.push({ pathname: activeTab === 'expenses' ? '/addexpense' : '/addincome', params: { ...item } });
+                    router.push({
+                      pathname: activeTab === 'expenses' ? '/addexpense' : '/addincome',
+                      params: { ...item },
+                    });
                   }}
                   style={styles.editButton}
                 >
