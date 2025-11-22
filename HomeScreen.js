@@ -187,16 +187,45 @@ const HomeScreen = () => {
     const confirmAndDelete = () => {
       remove(deleteRef)
         .then(async () => {
-          // If it's an expense with a budgetId, update the budget's used amount
-          if (type === 'expenses' && itemToDelete?.budgetId) {
-            const budgetRef = ref(database, `/users/${userId}/budgets/${itemToDelete.budgetId}`);
-            // Get current budget data
-            const budgetSnapshot = await get(budgetRef);
-            if (budgetSnapshot.exists()) {
-              const budgetData = budgetSnapshot.val();
-              const currentUsed = budgetData.used || 0;
-              const newUsed = Math.max(0, currentUsed - parseFloat(itemToDelete.amount || 0));
-              await update(budgetRef, { used: newUsed });
+          // If it's an expense, refund amount to associated budgets
+          if (type === 'expenses') {
+            const amountToRefund = parseFloat(itemToDelete.amount || 0);
+            if (itemToDelete?.budgetIds && Array.isArray(itemToDelete.budgetIds)) {
+              // Use stored budgetIds
+              for (const budgetId of itemToDelete.budgetIds) {
+                const budgetRef = ref(database, `/users/${userId}/budgets/${budgetId}`);
+                const budgetSnapshot = await get(budgetRef);
+                if (budgetSnapshot.exists()) {
+                  const budgetData = budgetSnapshot.val();
+                  const currentUsed = budgetData.used || 0;
+                  const newUsed = Math.max(0, currentUsed - amountToRefund);
+                  await update(budgetRef, { used: newUsed });
+                }
+              }
+            } else {
+              // Fallback: find budgets by category
+              const budgetsRef = ref(database, `users/${userId}/budgets`);
+              const snapshot = await get(budgetsRef);
+              if (snapshot.exists()) {
+                const budgetsData = snapshot.val();
+                const category = itemToDelete.category.trim().toLowerCase();
+                console.log('Delete expense category:', category);
+                for (const budgetId in budgetsData) {
+                  const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
+                  console.log('Budget category:', budgetCategory, 'for budgetId:', budgetId);
+                  if (budgetCategory === category) {
+                    const budgetRef = ref(database, `/users/${userId}/budgets/${budgetId}`);
+                    const budgetSnapshot = await get(budgetRef);
+                    if (budgetSnapshot.exists()) {
+                      const budgetData = budgetSnapshot.val();
+                      const currentUsed = budgetData.used || 0;
+                      const newUsed = Math.max(0, currentUsed - amountToRefund);
+                      await update(budgetRef, { used: newUsed });
+                      console.log('Refunded to budget:', budgetId, 'new used:', newUsed);
+                    }
+                  }
+                }
+              }
             }
           }
 

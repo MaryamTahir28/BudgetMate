@@ -8,10 +8,8 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   deleteUser,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
+  sendPasswordResetEmail,
   signOut,
-  updatePassword,
   updateProfile
 } from 'firebase/auth';
 import { ref, remove } from 'firebase/database';
@@ -41,12 +39,8 @@ const SettingsScreen = () => {
 
   // State for password reset
   const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showOldPassword, setShowOldPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const currencies = ['PKR', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'];
 
@@ -83,33 +77,47 @@ const SettingsScreen = () => {
     }
   };
 
+  const validatePassword = (password) => {
+    // No longer used in new flow; remove detailed password validation here if unused.
+    return null;
+  };
+
   const handlePasswordReset = async () => {
-    if (!user || !oldPassword || !newPassword || newPassword !== confirmPassword) {
-      Alert.alert('Error', 'Please fill all fields correctly');
+    if (!user || !oldPassword) {
+      Alert.alert('Error', 'Please enter your current password');
       return;
     }
 
+    // Instead of changing password here, send password reset email
     try {
-      const credential = EmailAuthProvider.credential(user.email, oldPassword);
-      await reauthenticateWithCredential(user, credential);
-      await updatePassword(user, newPassword);
-      Alert.alert('Success', 'Password updated successfully');
+      await sendPasswordResetEmail(auth, user.email);
+      Alert.alert(
+        'Password Reset Email Sent',
+        'A password reset link has been sent to your email address. Please check your inbox and follow the link to set a new password.'
+      );
       setShowPasswordModal(false);
       setOldPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
     } catch (error) {
-      let errorMessage = 'An error occurred while updating your password';
-
-      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-        errorMessage = 'Current password is incorrect. Please try again.';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'New password is too weak. Please choose a stronger password.';
-      } else if (error.code === 'auth/requires-recent-login') {
-        errorMessage = 'Please log out and log back in before changing your password.';
+      console.error('Password reset email error:', error);
+      let errorMessage = 'Failed to send password reset email. Please try again later.';
+      if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many requests made to change password. Please try again later.';
       }
-
       Alert.alert('Error', errorMessage);
+    }
+  };
+
+  const handleSendVerificationEmail = async () => {
+    if (!user) return;
+
+    try {
+      console.log('Manually sending verification email...');
+      await sendEmailVerification(user);
+      console.log('Verification email sent successfully');
+      Alert.alert('Success', 'Verification email sent! Please check your email and click the verification link.');
+    } catch (error) {
+      console.error('Send verification error:', error);
+      Alert.alert('Error', 'Failed to send verification email. Please try again later.');
     }
   };
 
@@ -280,52 +288,13 @@ const SettingsScreen = () => {
                   />
                 </TouchableOpacity>
               </View>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="New Password"
-                  secureTextEntry={!showNewPassword}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  placeholderTextColor={isDarkMode ? '#aaa' : '#666'}
-                />
-                <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowNewPassword(!showNewPassword)}
-                >
-                  <Ionicons
-                    name={showNewPassword ? 'eye-off' : 'eye'}
-                    size={24}
-                    color={isDarkMode ? '#aaa' : '#666'}
-                  />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirm New Password"
-                  secureTextEntry={!showConfirmPassword}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholderTextColor={isDarkMode ? '#aaa' : '#666'}
-                />
-                <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                >
-                  <Ionicons
-                    name={showConfirmPassword ? 'eye-off' : 'eye'}
-                    size={24}
-                    color={isDarkMode ? '#aaa' : '#666'}
-                  />
-                </TouchableOpacity>
-              </View>
+
               <View style={styles.modalButtons}>
                 <TouchableOpacity
                   style={[styles.button, styles.modalButton]}
                   onPress={handlePasswordReset}
                 >
-                  <Text style={styles.buttonText}>Submit</Text>
+                  <Text style={styles.buttonText}>Send Verification Email</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.button, styles.modalButton, styles.cancelButton]}

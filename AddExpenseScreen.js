@@ -1,12 +1,13 @@
 // AddExpenseScreen.js
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Picker } from "@react-native-picker/picker"; // ✅ for web
+
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { onValue, push, ref, update } from "firebase/database";
+import { get, push, ref, update } from "firebase/database";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StatusBar,
+  Alert, Keyboard, KeyboardAvoidingView, Platform,
+  StatusBar,
   StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View
 } from 'react-native';
 
@@ -34,29 +35,7 @@ const AddExpenseScreen = () => {
   const [customCategory, setCustomCategory] = useState('');
   const [useCustomCategory, setUseCustomCategory] = useState(false);
   const [categories, setCategories] = useState(initialCategories);
-  const [budgets, setBudgets] = useState([]); // Ensure budgets is initialized as an empty array
-  const [showDropDown, setShowDropDown] = useState(false);
-  const [selectedBudget, setSelectedBudget] = useState(null); // ✅ added
   const [rent, setRent] = useState(''); // ✅ added
-
-  // Load budgets from Firebase
-  useEffect(() => {
-    const userId = auth.currentUser?.uid || "guest";
-    const budgetsRef = ref(database, `users/${userId}/budgets`);
-    onValue(budgetsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const loadedBudgets = Object.keys(data).map((key) => ({
-          label: `${data[key].category} (Remaining: ${data[key].amount - (data[key].used || 0)})`,
-          value: key,
-          ...data[key],
-        }));
-        setBudgets(loadedBudgets);
-      } else {
-        setBudgets([]); // Ensure budgets is set to an empty array if no data exists
-      }
-    });
-  }, []);
 
   useEffect(() => {
     if (params?.firebaseKey && !hasPrefilled.current) {
@@ -87,7 +66,6 @@ const AddExpenseScreen = () => {
       category: useCustomCategory ? customCategory : selectedCategory,
       note,
       rent: rent ? parseFloat(rent) : 0,
-      budgetId: selectedBudget,
       date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
       time: new Date().toLocaleTimeString(),
     };
@@ -96,35 +74,77 @@ const AddExpenseScreen = () => {
       const userId = auth.currentUser?.uid || 'guest';
 
       if (params?.firebaseKey) {
+        // Update existing expense
+        const oldExpenseRef = ref(database, `users/${userId}/expenses/${params.firebaseKey}`);
+        const oldExpenseSnapshot = await get(oldExpenseRef);
+        if (oldExpenseSnapshot.exists()) {
+          const oldExpense = oldExpenseSnapshot.val();
+          const oldAmount = parseFloat(oldExpense.amount || 0);
+          const oldCategory = oldExpense.category;
+
+          // Refund old amount from old budgets
+          if (oldExpense.budgetIds && Array.isArray(oldExpense.budgetIds)) {
+            for (const budgetId of oldExpense.budgetIds) {
+              const budgetRef = ref(database, `users/${userId}/budgets/${budgetId}`);
+              const budgetSnapshot = await get(budgetRef);
+              if (budgetSnapshot.exists()) {
+                const budgetData = budgetSnapshot.val();
+                const currentUsed = budgetData.used || 0;
+                const newUsed = Math.max(0, currentUsed - oldAmount);
+                await update(budgetRef, { used: newUsed });
+              }
+            }
+          }
+        }
+
+        // Deduct new amount from matching budgets
+        const budgetsRef = ref(database, `users/${userId}/budgets`);
+        const snapshot = await get(budgetsRef);
+        const budgetIds = [];
+        if (snapshot.exists()) {
+          const budgetsData = snapshot.val();
+          const category = (useCustomCategory ? customCategory : selectedCategory).trim();
+          console.log('Update expense category:', category);
+          for (const budgetId in budgetsData) {
+            const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
+            console.log('Budget category:', budgetCategory, 'for budgetId:', budgetId);
+            if (budgetCategory === category.toLowerCase()) {
+              const newUsed = (budgetsData[budgetId].used || 0) + amountValue;
+              await update(ref(database, `users/${userId}/budgets/${budgetId}`), { used: newUsed });
+              budgetIds.push(budgetId);
+              console.log('Deducted from budget:', budgetId, 'new used:', newUsed);
+            }
+          }
+        }
+        expenseData.budgetIds = budgetIds;
         await update(ref(database, `users/${userId}/expenses/${params.firebaseKey}`), expenseData);
         Alert.alert('Updated', 'Expense updated successfully.');
       } else {
+        // Add new expense
         expenseData.id = Date.now().toString();
-        await push(ref(database, `users/${userId}/expenses`), expenseData);
-        Alert.alert('Success', 'Expense saved.');
 
-        // ✅ Update budget if linked
-        // ✅ Safe budget lookup without using find method
-      if (selectedBudget && Array.isArray(budgets) && budgets.length > 0) {
-        let budgetFound = null;
-        // Use a simple for loop instead of find method
-        for (let i = 0; i < budgets.length; i++) {
-          if (String(budgets[i].value) === String(selectedBudget)) {
-            budgetFound = budgets[i];
-            break;
+        // Auto-deduct from all matching budgets
+        const budgetsRef = ref(database, `users/${userId}/budgets`);
+        const snapshot = await get(budgetsRef);
+        const budgetIds = [];
+        if (snapshot.exists()) {
+          const budgetsData = snapshot.val();
+          const category = (useCustomCategory ? customCategory : selectedCategory).trim();
+          console.log('Expense category:', category);
+          for (const budgetId in budgetsData) {
+            const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
+            console.log('Budget category:', budgetCategory, 'for budgetId:', budgetId);
+            if (budgetCategory === category.toLowerCase()) {
+              const newUsed = (budgetsData[budgetId].used || 0) + amountValue;
+              await update(ref(database, `users/${userId}/budgets/${budgetId}`), { used: newUsed });
+              budgetIds.push(budgetId); // Collect all matching budget IDs
+              console.log('Deducted from budget:', budgetId, 'new used:', newUsed);
+            }
           }
         }
-        if (budgetFound) {
-          const userId = auth.currentUser?.uid || "guest";
-          const newUsed = (budgetFound.used || 0) + amountValue;
-          await update(ref(database, `users/${userId}/budgets/${selectedBudget}`), { used: newUsed });
-        } else {
-          console.warn("⚠️ Budget not found for:", selectedBudget);
-        }
-      } else {
-        console.warn("⚠️ No budgets available or no budget selected");
-      }
-      
+        expenseData.budgetIds = budgetIds; // Store budget IDs on the expense
+        await push(ref(database, `users/${userId}/expenses`), expenseData);
+        Alert.alert('Success', 'Expense saved.');
       }
 
       router.replace('/home');
@@ -132,7 +152,7 @@ const AddExpenseScreen = () => {
       console.error(err);
       Alert.alert('Error', 'Failed to save expense.');
     }
-  }, [title, amount, selectedCategory, customCategory, note, date, rent, selectedBudget, budgets, router, params, useCustomCategory]);
+  }, [title, amount, selectedCategory, customCategory, note, date, rent, router, params, useCustomCategory]);
 
   const handleSaveCustomCategory = () => {
     if (customCategory.trim() !== '') {
@@ -160,124 +180,102 @@ const AddExpenseScreen = () => {
           style={{ flex: 1 }}
           keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 30}
         >
-          <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 0 }} keyboardShouldPersistTaps="handled">
-            <ScrollView contentContainerStyle={styles.container}>
-              <Text style={styles.title}>
-                {params?.firebaseKey ? 'Edit Expense' : 'Add Expense'}
-              </Text>
+          <View style={styles.container}>
+            <Text style={styles.title}>
+              {params?.firebaseKey ? 'Edit Expense' : 'Add Expense'}
+            </Text>
 
-              <Text style={styles.label}>Amount</Text>
-              <TextInput
-                value={amount}
-                onChangeText={handleAmountChange}
-                keyboardType="numeric"
-                style={[styles.input, styles.tealInput]}
-                placeholder="Enter amount"
-                placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
+            <Text style={styles.label}>Amount</Text>
+            <TextInput
+              value={amount}
+              onChangeText={handleAmountChange}
+              keyboardType="numeric"
+              style={[styles.input, styles.tealInput]}
+              placeholder="Enter amount"
+              placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
+            />
+
+            <Text style={styles.label}>Date</Text>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.input, styles.tealInput]}>
+              <Text style={styles.tealText}>{date.toDateString()}</Text>
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={date}
+                mode="date"
+                display="default"
+                onChange={(event, selected) => {
+                  setShowDatePicker(false);
+                  if (selected) setDate(selected);
+                }}
               />
+            )}
 
-              <Text style={styles.label}>Date</Text>
-              <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.input, styles.tealInput]}>
-                <Text style={styles.tealText}>{date.toDateString()}</Text>
-              </TouchableOpacity>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={date}
-                  mode="date"
-                  display="default"
-                  onChange={(event, selected) => {
-                    setShowDatePicker(false);
-                    if (selected) setDate(selected);
-                  }}
-                />
-              )}
-
-              <Text style={styles.label}>Category</Text>
-              <View style={styles.categoryWrap}>
-                {categories.map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.catBox, selectedCategory === cat && styles.catBoxSelected]}
-                    onPress={() => {
-                      setSelectedCategory(cat);
-                      setUseCustomCategory(false);
-                    }}
-                  >
-                    <Text style={{ color: selectedCategory === cat ? '#fff' : '#800080' }}>
-                      {cat}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-
+            <Text style={styles.label}>Category</Text>
+            <View style={styles.categoryWrap}>
+              {categories.map((cat) => (
                 <TouchableOpacity
-                  style={[styles.catBox, useCustomCategory && styles.catBoxSelected, { borderStyle: 'dashed' }]}
+                  key={cat}
+                  style={[styles.catBox, selectedCategory === cat && styles.catBoxSelected]}
                   onPress={() => {
-                    setUseCustomCategory(true);
-                    setSelectedCategory('');
+                    setSelectedCategory(cat);
+                    setUseCustomCategory(false);
                   }}
                 >
-                  <MaterialCommunityIcons name="plus" size={18} color="#800080" />
+                  <Text style={{ color: selectedCategory === cat ? '#fff' : '#800080' }}>
+                    {cat}
+                  </Text>
                 </TouchableOpacity>
-              </View>
+              ))}
 
-              {useCustomCategory && (
-                <>
-                  <TextInput
-                    style={[styles.input, styles.tealInput]}
-                    placeholder="Enter custom category"
-                    value={customCategory}
-                    onChangeText={setCustomCategory}
-                    placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
-                  />
-                  <TouchableOpacity style={styles.saveButton} onPress={handleSaveCustomCategory}>
-                    <Text style={styles.saveText}>Save Category</Text>
-                  </TouchableOpacity>
-                </>
-              )}
+              <TouchableOpacity
+                style={[styles.catBox, useCustomCategory && styles.catBoxSelected, { borderStyle: 'dashed' }]}
+                onPress={() => {
+                  setUseCustomCategory(true);
+                  setSelectedCategory('');
+                }}
+              >
+                <MaterialCommunityIcons name="plus" size={18} color="#800080" />
+              </TouchableOpacity>
+            </View>
 
-              <Text style={styles.label}>Budget</Text>
-              <View style={[styles.input, { padding: 0 }]}>
-                <Picker
-                  selectedValue={selectedBudget}
-                  onValueChange={(itemValue) => setSelectedBudget(itemValue)}
-                >
-                  <Picker.Item 
-                    label="Select Budget" 
-                    value={null} 
-                    style={{ color: '#aaa', fontFamily: 'serif' }} 
-                  />
-                  {budgets.map((b) => (
-                    <Picker.Item
-                      key={b.value}
-                      label={`${b.category} (Remaining: ${b.amount - (b.used || 0)})`}
-                      value={b.value}
-                      style={{ color: '#003366', fontFamily: 'serif' }}
-                    />
-                  ))}
-                </Picker>
-              </View>
-
-              <Text style={styles.label}>Note</Text>
-              <TextInput
-                value={note}
-                onChangeText={setNote}
-                style={[styles.input, styles.tealInput, { height: 80 }]}
-                placeholder="Add description (optional)"
-                placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
-                multiline
-              />
-
-              <View style={styles.buttonRow}>
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                  <Text style={styles.saveText}>{params?.firebaseKey ? 'Update' : 'Save'}</Text>
+            {useCustomCategory && (
+              <>
+                <TextInput
+                  style={[styles.input, styles.tealInput]}
+                  placeholder="Enter custom category"
+                  value={customCategory}
+                  onChangeText={setCustomCategory}
+                  placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
+                />
+                <TouchableOpacity style={styles.saveButton} onPress={handleSaveCustomCategory}>
+                  <Text style={styles.saveText}>Save Category</Text>
                 </TouchableOpacity>
+              </>
+            )}
 
-                <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()}>
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </ScrollView>
+
+
+            <Text style={styles.label}>Note</Text>
+            <TextInput
+              value={note}
+              onChangeText={setNote}
+              style={[styles.input, styles.tealInput, { height: 80 }]}
+              placeholder="Add description (optional)"
+              placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
+              multiline
+            />
+
+            <View style={styles.buttonRow}>
+              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                <Text style={styles.saveText}>{params?.firebaseKey ? 'Update' : 'Save'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </KeyboardAvoidingView>
       </TouchableWithoutFeedback>
     </SafeAreaView>

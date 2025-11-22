@@ -26,14 +26,15 @@ export default function BudgetDetails() {
       if (snapshot.exists()) {
         const data = snapshot.val();
         const filtered = Object.values(data).filter(
-          (exp) => exp.category === category && exp.budgetId === id
+          (exp) => exp.category && exp.category.trim().toLowerCase() === category.trim().toLowerCase() &&
+                   exp.budgetIds && Array.isArray(exp.budgetIds) && exp.budgetIds.includes(id)
         );
         setExpenses(filtered);
       } else {
         setExpenses([]);
       }
     });
-  }, [category]);
+  }, [category, id]);
 
   const dynamicStyles = getStyles(isDarkMode);
 

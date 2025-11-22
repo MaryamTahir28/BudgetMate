@@ -120,7 +120,7 @@ const LoginScreen = () => {
         await sendPasswordResetEmail(auth, email);
         showAlert(
             'Password Reset Email Sent',
-            'A password reset link has been sent to your registered email address. Please check your inbox.'
+            'A password reset link has been sent to your registered email address. Please check your inbox. Note: Your new password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character (!@#$%^&*(),.?":{}|<>).'
         );
     } catch (error) {
         let message = 'Something went wrong. Please try again.';
