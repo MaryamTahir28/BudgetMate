@@ -240,6 +240,16 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Savings Goals</Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => router.push('/savingsGoals')}
+          >
+            <Text style={styles.buttonText}>Manage Savings Goals</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Account Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
