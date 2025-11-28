@@ -39,6 +39,15 @@ const categoryIcons = {
 
 import { useAppContext } from '../../AppContext';
 
+// Helper function to get local date string in YYYY-MM-DD format
+const getLocalDateString = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const HomeScreen = () => {
   const router = useRouter();
   const { currency, formatAmount, isDarkMode } = useAppContext();
@@ -51,72 +60,86 @@ const HomeScreen = () => {
   const { type } = useLocalSearchParams();
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [selectedDateRange, setSelectedDateRange] = useState({
-    startDate: null,
-    endDate: null
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(null); // 0-11
+  const [selectedDate, setSelectedDate] = useState(null); // day of month or null
+  const [selectedDateRange, setSelectedDateRange] = useState(() => {
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return {
+      startDate: getLocalDateString(startDate),
+      endDate: getLocalDateString(endDate)
+    };
   });
-  const [currentMonthText, setCurrentMonthText] = useState('May 2025 ▼');
+  const [currentMonthText, setCurrentMonthText] = useState(() => {
+    const now = new Date();
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    return `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+  });
   // For override filter to show expenses of a specific month/year ignoring global date filter
   const [expensesMonthOverride, setExpensesMonthOverride] = useState(null); // {month: 1-12, year: number} or null
 
+  // Function to handle month selection
+  const handleMonthSelect = (monthIndex) => {
+    setSelectedMonth(monthIndex);
+    setSelectedDate(null); // Clear date if month is selected
+  };
+
   // Function to handle date selection from calendar
   const handleDateSelect = (day) => {
-    const selectedDate = new Date(day.dateString);
+    const selectedDateObj = new Date(day.dateString);
+    setSelectedDate(selectedDateObj.getDate());
+    setSelectedMonth(selectedDateObj.getMonth());
+  };
+
+  // Function to apply filter
+  const applyFilter = () => {
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'];
-    
-    const monthName = monthNames[selectedDate.getMonth()];
-    const year = selectedDate.getFullYear();
-    
-    // Set the start and end dates for the selected month
-    const startDate = new Date(year, selectedDate.getMonth(), 1);
-    const endDate = new Date(year, selectedDate.getMonth() + 1, 0);
-    
-    setSelectedDateRange({
-      startDate: startDate.toISOString().split('T')[0],
-      endDate: endDate.toISOString().split('T')[0]
-    });
-    console.log('Selected date range:', startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]);
-    
-    setCurrentMonthText(`${monthName} ${year} ▼`);
-    setShowCalendar(false);
-    // Clear override if user change global filter
+
+    if (selectedDate !== null) {
+      // Specific date filter
+      const dateObj = new Date(currentYear, selectedMonth, selectedDate);
+      const dateStr = getLocalDateString(dateObj);
+      setSelectedDateRange({
+        startDate: dateStr,
+        endDate: dateStr
+      });
+      setCurrentMonthText(`${monthNames[selectedMonth]} ${selectedDate}, ${currentYear} `);
+    } else if (selectedMonth !== null) {
+      // Month filter
+      const startDate = new Date(currentYear, selectedMonth, 1);
+      const endDate = new Date(currentYear, selectedMonth + 1, 0);
+      setSelectedDateRange({
+        startDate: getLocalDateString(startDate),
+        endDate: getLocalDateString(endDate)
+      });
+      setCurrentMonthText(`${monthNames[selectedMonth]} ${currentYear} `);
+    }
+
+    setShowFilterModal(false);
     setExpensesMonthOverride(null);
   };
 
-  // Function to handle individual date selection
-  const handleIndividualDateSelect = (day) => {
-    const selectedDate = new Date(day.dateString);
+  // Function to clear filter and reset to current month
+  const clearFilter = () => {
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    setSelectedDateRange({
+      startDate: getLocalDateString(startDate),
+      endDate: getLocalDateString(endDate)
+    });
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'];
-    
-    const monthName = monthNames[selectedDate.getMonth()];
-    const dayOfMonth = selectedDate.getDate();
-    const year = selectedDate.getFullYear();
-    
-    // Set the same date for both start and end to filter for a single day
-    setSelectedDateRange({
-      startDate: selectedDate.toISOString().split('T')[0],
-      endDate: selectedDate.toISOString().split('T')[0]
-    });
-    console.log('Selected single date:', selectedDate.toISOString().split('T')[0]);
-    
-    setCurrentMonthText(`${monthName} ${dayOfMonth}, ${year} ▼`);
-    setShowCalendar(false);
-    // Clear override if user change global filter
-    setExpensesMonthOverride(null);
-  };
-
-  // Function to clear date filter
-  const clearDateFilter = () => {
-    setSelectedDateRange({
-      startDate: null,
-      endDate: null
-    });
-    setCurrentMonthText('All Time ▼');
-    setShowCalendar(false);
-    // Clear override on clearing filter
+    setCurrentMonthText(`${monthNames[now.getMonth()]} ${now.getFullYear()} `);
+    setSelectedMonth(null);
+    setSelectedDate(null);
+    setShowFilterModal(false);
     setExpensesMonthOverride(null);
   };
 
@@ -335,7 +358,7 @@ const HomeScreen = () => {
     const year = date.getFullYear();
     setExpensesMonthOverride({ month, year });
     setActiveTab('expenses');
-    setCurrentMonthText(`Expenses for ${month}/${year} ▼`);
+    setCurrentMonthText(`Expenses for ${month}/${year} `);
   };
 
   const renderGroupedExpenses = () => {
@@ -365,9 +388,9 @@ const HomeScreen = () => {
         itemDate.setHours(0, 0, 0, 0);
 
         console.log('Filtering:', {
-          itemDate: itemDate.toISOString().split('T')[0],
-          startDate: startDate.toISOString().split('T')[0],
-          endDate: endDate.toISOString().split('T')[0],
+          itemDate: getLocalDateString(itemDate),
+          startDate: getLocalDateString(startDate),
+          endDate: getLocalDateString(endDate),
           originalItemDate: item.date,
           isInRange: itemDate >= startDate && itemDate <= endDate,
         });
@@ -457,29 +480,125 @@ const HomeScreen = () => {
   return (
     <>
       <Modal
-        visible={showCalendar}
+        visible={showFilterModal}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setShowCalendar(false)}
+        onRequestClose={() => setShowFilterModal(false)}
       >
         <View style={styles.modalContainer}>
-          <Calendar
-            onDayPress={handleIndividualDateSelect}
-            markedDates={{
-              [selectedDateRange.startDate]: { selected: true, marked: true },
-              [selectedDateRange.endDate]: { selected: true, marked: true },
-            }}
-          />
-          <View style={styles.calendarButtons}>
-            <TouchableOpacity onPress={clearDateFilter} style={styles.clearButton}>
-              <Text style={styles.clearButtonText}>Clear Filter</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowCalendar(false)} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
+          <View style={styles.filterModalContainer}>
+            <View style={styles.filterModalTitleContainer}>
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={styles.filterModalTitle}>{currentMonthText}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowDateModal(true)} style={styles.titleCalendarIcon}>
+                <MaterialCommunityIcons name="calendar" size={24} color={isDarkMode ? '#fff' : '#003366'} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.yearNavigation}>
+              <TouchableOpacity onPress={() => setCurrentYear(currentYear - 1)}>
+                <Text style={styles.navigationButton}>{'<'}</Text>
+              </TouchableOpacity>
+              <View style={styles.yearContainer}>
+                <Text style={styles.yearText}>{currentYear}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setCurrentYear(currentYear + 1)}>
+                <Text style={styles.navigationButton}>{'>'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.monthsGrid}>
+              {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((month, index) => (
+                <TouchableOpacity
+                  key={month}
+                  onPress={() => handleMonthSelect(index)}
+                  style={[
+                    styles.monthButton,
+                    selectedMonth === index && styles.selectedMonthButton
+                  ]}
+                >
+                  <Text style={[
+                    styles.monthText,
+                    selectedMonth === index && styles.selectedMonthText
+                  ]}>
+                    {month}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+
+
+            <View style={styles.filterButtons}>
+              <TouchableOpacity onPress={clearFilter} style={styles.clearButton}>
+                <Text style={styles.clearButtonText}>Clear Filter</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={applyFilter} style={styles.applyButton}>
+                <Text style={styles.applyButtonText}>Apply Filter</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={showDateModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDateModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.dateModalContainer}>
+            <Calendar
+              current={`${currentYear}-${String(selectedMonth !== null ? selectedMonth + 1 : new Date().getMonth() + 1).padStart(2, '0')}-01`}
+              onDayPress={(day) => {
+                handleDateSelect(day);
+                setShowDateModal(false);
+              }}
+              markedDates={{
+                ...(selectedDate !== null && selectedMonth !== null ? {
+                  [`${currentYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`]: {
+                    selected: true,
+                    selectedColor: '#800080'
+                  }
+                } : {})
+              }}
+              theme={{
+                backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
+                calendarBackground: isDarkMode ? '#2A2A2A' : '#fff',
+                textSectionTitleColor: isDarkMode ? '#fff' : '#003366',
+                selectedDayBackgroundColor: '#800080',
+                selectedDayTextColor: '#fff',
+                todayTextColor: '#800080',
+                dayTextColor: isDarkMode ? '#fff' : '#003366',
+                textDisabledColor: isDarkMode ? '#555' : '#d9e1e8',
+                dotColor: '#800080',
+                selectedDotColor: '#fff',
+                arrowColor: '#800080',
+                disabledArrowColor: isDarkMode ? '#555' : '#d9e1e8',
+                monthTextColor: isDarkMode ? '#fff' : '#003366',
+                indicatorColor: '#800080',
+                textDayFontFamily: 'serif',
+                textMonthFontFamily: 'serif',
+                textDayHeaderFontFamily: 'serif',
+                textDayFontWeight: 'bold',
+                textMonthFontWeight: 'bold',
+                textDayHeaderFontWeight: 'bold',
+                textDayFontSize: 16,
+                textMonthFontSize: 18,
+                textDayHeaderFontSize: 14,
+              }}
+            />
+            <View style={styles.calendarButtons}>
+              <TouchableOpacity onPress={() => setShowDateModal(false)} style={styles.closeButton}>
+                <Text style={styles.closeButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <SafeAreaView style={styles.container}>
       <View style={styles.topSection}>
         <View style={styles.header}>
@@ -490,8 +609,9 @@ const HomeScreen = () => {
             />
             <Text style={styles.headerText}>BudgetMate</Text>
           </View>
-          <TouchableOpacity onPress={() => setShowCalendar(true)}>
-            <Text style={styles.monthButton}>{currentMonthText}</Text>
+          <TouchableOpacity style={styles.headerMonthButton} onPress={() => setShowFilterModal(true)}>
+            <Text style={styles.headerMonthButtonText}>{currentMonthText}</Text>
+            <Ionicons name="chevron-down" size={18} color="#003366" />
           </TouchableOpacity>
         </View>
 
@@ -669,15 +789,24 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontWeight: 'bold',
     fontFamily: 'serif',
   },
-  monthButton: {
-    color: isDarkMode ? '#fff' : '#003366',
+  headerMonthButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     borderWidth: 1,
-    borderColor: isDarkMode ? '#555' : '#003366',
-    padding: 6,
-    borderRadius: 8,
-    fontSize: 14,
+    borderColor: '#003366',
+  },
+  headerMonthButtonText: {
+    color: '#003366',
+    fontSize: 15,
+    fontWeight: '600',
+    marginRight: 6,
     fontFamily: 'serif',
   },
+
   dateGroupLabel: {
     fontSize: 16,
     marginTop: 20,
@@ -902,7 +1031,10 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: isDarkMode 
+      ? 'rgba(0, 0, 0, 0.7)' 
+      : 'rgba(0, 0, 0, 0.5)',
+    paddingTop: 0,   
   },
   calendarButtons: {
     flexDirection: 'row',
@@ -936,5 +1068,140 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  monthSelectorContainer: {
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
+    borderRadius: 10,
+    padding: 20,
+    width: '90%',
+    maxHeight: '80%',
+  },
+  yearNavigation: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  navigationButton: {
+    fontSize: 24,
+    color: isDarkMode ? '#fff' : '#003366',
+    paddingHorizontal: 10,
+  },
+  yearText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: isDarkMode ? '#fff' : '#003366',
+  },
+  monthsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  monthButton: {
+    width: '30%',
+    padding: 10,
+    marginVertical: 5,
+    backgroundColor: '#800080',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  monthText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'serif',
+  },
+  switchToDateButton: {
+    backgroundColor: '#003366',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  switchToDateText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: 'serif',
+
+  },
+  filterModalContainer: {
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
+    borderRadius: 10,
+    padding: 20,
+    width: '90%',
+    maxHeight: '80%',
+  },
+  filterModalTitleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  filterModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: isDarkMode ? '#fff' : '#003366',
+    fontFamily: 'serif',
+  },
+  titleCalendarIcon: {
+    padding: 5,
+  },
+  selectedMonthButton: {
+    backgroundColor: '#003366',
+  },
+  selectedMonthText: {
+    color: '#F9F9F9',
+  },
+  filterButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingHorizontal: 20,
+    marginTop: 20,
+  },
+  applyButton: {
+    backgroundColor: '#003366',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    flex: 1,
+    marginLeft: 10,
+  },
+  applyButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  dateCalendarButton: {
+    backgroundColor: '#800080',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  dateCalendarButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginRight: 8,
+  },
+  yearContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  calendarIcon: {
+    marginLeft: 10,
+    padding: 5,
+  },
+  dateModalContainer: {
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
+    borderRadius: 10,
+    padding: 20,
+    width: '90%',
+    maxHeight: '80%',
   },
 });

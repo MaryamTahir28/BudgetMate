@@ -3,14 +3,14 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { onValue, ref } from 'firebase/database';
 import { useEffect, useState } from 'react';
 import {
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useAppContext } from '../../AppContext';
 import { auth, database } from '../../firebaseConfig';
@@ -71,10 +71,6 @@ export default function WishlistDetails() {
         <View style={styles.detailRow}>
           <Text style={styles.label}>Required Amount:</Text>
           <Text style={styles.value}>{formatAmount(wish.amount)}</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.label}>Saved Amount:</Text>
-          <Text style={styles.value}>{formatAmount(wish.savedAmount)}</Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.label}>Remaining Amount:</Text>

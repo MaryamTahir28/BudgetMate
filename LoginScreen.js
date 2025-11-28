@@ -116,11 +116,14 @@ const LoginScreen = () => {
     setLoading(true);
 
     try {
-        
-        await sendPasswordResetEmail(auth, email);
+        const actionCodeSettings = {
+            url: 'https://budgetmate-a7900.firebaseapp.com/__/auth/action',
+            handleCodeInApp: true,
+        };
+        await sendPasswordResetEmail(auth, email, actionCodeSettings);
         showAlert(
             'Password Reset Email Sent',
-            'A password reset link has been sent to your registered email address. Please check your inbox. Note: Your new password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character (!@#$%^&*(),.?":{}|<>).'
+            'A password reset link has been sent to your registered email address. Please check your inbox and click the link to reset your password within the app. Note: Your new password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character (!@#$%^&*(),.?":{}|<>).'
         );
     } catch (error) {
         let message = 'Something went wrong. Please try again.';
