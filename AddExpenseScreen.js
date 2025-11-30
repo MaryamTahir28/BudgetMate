@@ -35,7 +35,6 @@ const AddExpenseScreen = () => {
   const [customCategory, setCustomCategory] = useState('');
   const [useCustomCategory, setUseCustomCategory] = useState(false);
   const [categories, setCategories] = useState(initialCategories);
-  const [rent, setRent] = useState(''); // ✅ added
 
   useEffect(() => {
     if (params?.firebaseKey && !hasPrefilled.current) {
@@ -65,13 +64,56 @@ const AddExpenseScreen = () => {
       amount: amountValue.toString(),
       category: useCustomCategory ? customCategory : selectedCategory,
       note,
-      rent: rent ? parseFloat(rent) : 0,
       date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
       time: new Date().toLocaleTimeString(),
     };
 
     try {
       const userId = auth.currentUser?.uid || 'guest';
+
+      // Helper function to check budget exceedance and handle alert
+      const checkBudgetExceedance = (budgetsData, category, amountValue) => {
+        return new Promise((resolve) => {
+          const exceedingCategories = [];
+          for (const budgetId in budgetsData) {
+            const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
+            if (budgetCategory === category.toLowerCase()) {
+              const currentUsed = budgetsData[budgetId].used || 0;
+              const budgetAmount = parseFloat(budgetsData[budgetId].amount || 0);
+              if (currentUsed + amountValue > budgetAmount) {
+                exceedingCategories.push(budgetsData[budgetId].category);
+              }
+            }
+          }
+          if (exceedingCategories.length > 0) {
+            Alert.alert(
+              'Budget Limit Exceeded',
+              `Adding this expense will exceed the budget limit for: ${exceedingCategories.join(', ')}. Do you want to proceed and automatically increase the budget?`,
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Proceed', onPress: () => resolve(true) },
+              ]
+            );
+          } else {
+            resolve(true);
+          }
+        });
+      };
+
+      // Helper function to increase budget amounts for exceeding categories
+      const increaseBudgets = async (budgetsData, category, amountValue) => {
+        for (const budgetId in budgetsData) {
+          const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
+          if (budgetCategory === category.toLowerCase()) {
+            const currentUsed = budgetsData[budgetId].used || 0;
+            const budgetAmount = parseFloat(budgetsData[budgetId].amount || 0);
+            if (currentUsed + amountValue > budgetAmount) {
+              const newAmount = currentUsed + amountValue;
+              await update(ref(database, `users/${userId}/budgets/${budgetId}`), { amount: newAmount.toString() });
+            }
+          }
+        }
+      };
 
       if (params?.firebaseKey) {
         // Update existing expense
@@ -97,9 +139,20 @@ const AddExpenseScreen = () => {
           }
         }
 
-        // Deduct new amount from matching budgets
+        // Check for budget exceedance before deducting new amount
         const budgetsRef = ref(database, `users/${userId}/budgets`);
         const snapshot = await get(budgetsRef);
+        if (snapshot.exists()) {
+          const budgetsData = snapshot.val();
+          const category = (useCustomCategory ? customCategory : selectedCategory).trim();
+          const shouldProceed = await checkBudgetExceedance(budgetsData, category, amountValue);
+          if (!shouldProceed) return;
+
+          // Increase budgets if proceeding
+          await increaseBudgets(budgetsData, category, amountValue);
+        }
+
+        // Deduct new amount from matching budgets
         const budgetIds = [];
         if (snapshot.exists()) {
           const budgetsData = snapshot.val();
@@ -123,9 +176,20 @@ const AddExpenseScreen = () => {
         // Add new expense
         expenseData.id = Date.now().toString();
 
-        // Auto-deduct from all matching budgets
+        // Check for budget exceedance before deducting
         const budgetsRef = ref(database, `users/${userId}/budgets`);
         const snapshot = await get(budgetsRef);
+        if (snapshot.exists()) {
+          const budgetsData = snapshot.val();
+          const category = (useCustomCategory ? customCategory : selectedCategory).trim();
+          const shouldProceed = await checkBudgetExceedance(budgetsData, category, amountValue);
+          if (!shouldProceed) return;
+
+          // Increase budgets if proceeding
+          await increaseBudgets(budgetsData, category, amountValue);
+        }
+
+        // Auto-deduct from all matching budgets
         const budgetIds = [];
         if (snapshot.exists()) {
           const budgetsData = snapshot.val();
@@ -152,7 +216,7 @@ const AddExpenseScreen = () => {
       console.error(err);
       Alert.alert('Error', 'Failed to save expense.');
     }
-  }, [title, amount, selectedCategory, customCategory, note, date, rent, router, params, useCustomCategory]);
+  }, [title, amount, selectedCategory, customCategory, note, date, router, params, useCustomCategory]);
 
   const handleSaveCustomCategory = () => {
     if (customCategory.trim() !== '') {

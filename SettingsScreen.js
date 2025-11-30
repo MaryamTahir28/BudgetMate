@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   deleteUser,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signOut,
   updateProfile
@@ -121,34 +122,58 @@ const SettingsScreen = () => {
     }
   };
 
-  const handleDeactivateAccount = async () => {
-    Alert.alert(
-      'Deactivate Account',
-      'This action cannot be undone. All your data will be permanently deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Deactivate',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (user) {
-                // Delete user data from database
-                const userRef = ref(database, `users/${user.uid}`);
-                await remove(userRef);
+  const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+  const [deactivateConfirmation, setDeactivateConfirmation] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
-                // Delete user account
-                await deleteUser(user);
-                await AsyncStorage.clear();
-                router.replace('/login');
-              }
-            } catch (error) {
-              Alert.alert('Error', error.message);
+  const handleDeactivateAccount = () => {
+    setShowDeactivateModal(true);
+  };
+
+  const confirmDeactivateAccount = async () => {
+    if (deactivateConfirmation.toUpperCase() !== 'DELETE') {
+      Alert.alert('Error', 'Please type "DELETE" to confirm account deactivation');
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      if (user) {
+        // Delete user data from database
+        const userRef = ref(database, `users/${user.uid}`);
+        await remove(userRef);
+
+        // Delete user account
+        await deleteUser(user);
+
+        // Clear local storage
+        await AsyncStorage.clear();
+
+        Alert.alert(
+          'Account Deactivated',
+          'Your account and all associated data have been permanently deleted.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.replace('/login')
             }
-          }
-        }
-      ]
-    );
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Deactivation error:', error);
+      let errorMessage = 'Failed to deactivate account. Please try again.';
+
+      if (error.code === 'auth/requires-recent-login') {
+        errorMessage = 'For security reasons, please log out and log back in before deactivating your account.';
+      }
+
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsDeleting(false);
+      setShowDeactivateModal(false);
+      setDeactivateConfirmation('');
+    }
   };
 
 
@@ -317,6 +342,60 @@ const SettingsScreen = () => {
           </View>
         </Modal>
 
+        {/* Deactivate Account Modal */}
+        <Modal
+          visible={showDeactivateModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowDeactivateModal(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Deactivate Account</Text>
+
+              <Text style={styles.warningText}>
+                ⚠️ This action cannot be undone. All your data including expenses, budgets, savings goals, and wishlist items will be permanently deleted.
+              </Text>
+
+              <Text style={styles.confirmationLabel}>
+                Type "DELETE" to confirm:
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={deactivateConfirmation}
+                onChangeText={setDeactivateConfirmation}
+                placeholder="Type DELETE here"
+                placeholderTextColor={isDarkMode ? '#aaa' : '#666'}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="default"
+                returnKeyType="done"
+              />
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.button, styles.modalButton, styles.cancelButton]}
+                  onPress={() => {
+                    setShowDeactivateModal(false);
+                    setDeactivateConfirmation('');
+                  }}
+                  disabled={isDeleting}
+                >
+                  <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.modalButton, styles.deleteButton]}
+                  onPress={confirmDeactivateAccount}
+                  disabled={isDeleting || deactivateConfirmation.toUpperCase() !== 'DELETE'}
+                >
+                  <Text style={styles.buttonText}>
+                    {isDeleting ? 'Deleting...' : 'Delete Account'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
       </ScrollView>
     </SafeAreaView>
@@ -368,7 +447,6 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     color: isDarkMode ? '#fff' : '#333',
     fontSize: 16,
-    flex: 1,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -467,5 +545,21 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   pickerItem: {
     color: isDarkMode ? '#fff' : '#333',
     fontSize: 16,
+  },
+  warningText: {
+    fontSize: 16,
+    color: '#ff6b6b',
+    marginBottom: 20,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  confirmationLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: isDarkMode ? '#fff' : '#333',
+    marginBottom: 10,
+  },
+  deleteButton: {
+    backgroundColor: '#ff6b6b',
   },
 });
