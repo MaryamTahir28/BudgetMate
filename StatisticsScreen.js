@@ -22,7 +22,7 @@ const categoryIcons = {
 };
 
 const StatisticsScreen = () => {
-  const { isDarkMode, formatAmount, currency, convertFromPKR , formatConvertedAmount} = useAppContext();
+  const { isDarkMode, formatAmount, currency, convertFromPKR , formatConvertedAmount, themeColors} = useAppContext();
 
   const [income, setIncome] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -206,13 +206,13 @@ const StatisticsScreen = () => {
 
   const barChartData = getBarChartData();
 
-  const styles = getStyles(isDarkMode);
+  const styles = getStyles(isDarkMode, themeColors);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDarkMode ? '#121212' : '#F9F9F9' }]}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.headerSpacer} />
-        <Text style={[styles.title, { color: isDarkMode ? '#fff' : '#003366' }]}>📊 Statistics</Text>
+        <Text style={[styles.title, { color: isDarkMode ? '#fff' : themeColors.secondary }]}>📊 Statistics</Text>
 
         {/* Time Filters */}
         <View style={styles.filterRow}>
@@ -263,7 +263,7 @@ const StatisticsScreen = () => {
 
         {/* Bar Chart for Expenses Over Time */}
         <View style={[styles.section, { backgroundColor: isDarkMode ? '#1E1E1E' : 'white', marginBottom: 20 }]}>
-          <Text style={[styles.sectionTitle, { color: isDarkMode ? '#fff' : '#003366' }]}>Expenses Over Time</Text>
+          <Text style={[styles.sectionTitle, { color: isDarkMode ? '#fff' : themeColors.secondary }]}>Expenses Over Time</Text>
           {barChartData.labels.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.chartScrollView}>
               <BarChart
@@ -291,7 +291,7 @@ const StatisticsScreen = () => {
                   propsForDots: {
                     r: '6',
                     strokeWidth: '2',
-                    stroke: '#800080',
+                    stroke: themeColors.primary,
                   },
                 }}
                 style={{
@@ -309,7 +309,7 @@ const StatisticsScreen = () => {
 
         {/* Category Breakdown */}
         <View style={[styles.section, { backgroundColor: isDarkMode ? '#1E1E1E' : 'white' }]}>
-          <Text style={[styles.sectionTitle, { color: isDarkMode ? '#fff' : '#003366' }]}>Expenses by Category</Text>
+          <Text style={[styles.sectionTitle, { color: isDarkMode ? '#fff' : themeColors.secondary }]}>Expenses by Category</Text>
           {pieData.length > 0 ? (
             <>
               <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.chartScrollView}>
@@ -363,18 +363,18 @@ const StatisticsScreen = () => {
 
         {/* Quick Stats */}
         <View style={[styles.section, { backgroundColor: isDarkMode ? '#1E1E1E' : 'white' }]}>
-          <Text style={[styles.sectionTitle, { color: isDarkMode ? '#fff' : '#003366' }]}>Quick Stats</Text>
+          <Text style={[styles.sectionTitle, { color: isDarkMode ? '#fff' : themeColors.secondary }]}>Quick Stats</Text>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: isDarkMode ? '#fff' : '#003366' }]}>{filteredIncome.length}</Text>
+              <Text style={[styles.statNumber, { color: isDarkMode ? '#fff' : themeColors.secondary }]}>{filteredIncome.length}</Text>
               <Text style={[styles.statLabel, { color: isDarkMode ? '#ccc' : '#666' }]}>Income Entries</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: isDarkMode ? '#fff' : '#003366' }]}>{filteredExpenses.length}</Text>
+              <Text style={[styles.statNumber, { color: isDarkMode ? '#fff' : themeColors.secondary }]}>{filteredExpenses.length}</Text>
               <Text style={[styles.statLabel, { color: isDarkMode ? '#ccc' : '#666' }]}>Expense Entries</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: isDarkMode ? '#fff' : '#003366' }]}>
+              <Text style={[styles.statNumber, { color: isDarkMode ? '#fff' : themeColors.secondary }]}>
                 {Object.keys(filteredCategoryBreakdown).length}
               </Text>
               <Text style={[styles.statLabel, { color: isDarkMode ? '#ccc' : '#666' }]}>Categories Used</Text>
@@ -386,7 +386,7 @@ const StatisticsScreen = () => {
   );
 };
 
-const getStyles = (isDarkMode) => StyleSheet.create({
+const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
@@ -401,7 +401,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     marginBottom: 20,
     textAlign: 'center',
     fontFamily: 'serif',
@@ -418,7 +418,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     backgroundColor: isDarkMode ? '#333' : '#f0f0f0',
   },
   filterActive: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
   },
   filterText: {
     fontSize: 14,
@@ -458,7 +458,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontFamily: 'serif',
   },
   balanceCard: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     padding: 25,
     borderRadius: 15,
     alignItems: 'center',
@@ -495,7 +495,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     marginBottom: 15,
     fontFamily: 'serif',
   },
@@ -513,7 +513,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     flex: 1,
   },
   categoryIcon: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     padding: 8,
     borderRadius: 20,
     marginRight: 12,
@@ -547,7 +547,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   statNumber: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontFamily: 'serif',
   },
   statLabel: {

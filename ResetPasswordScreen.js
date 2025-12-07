@@ -29,11 +29,14 @@ const showAlert = (title, message) => {
 const ResetPasswordScreen = () => {
     const router = useRouter();
     const { mode, oobCode } = useLocalSearchParams();
+    const { themeColors } = useAppContext();
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [passwordVisible, setPasswordVisible] = useState(false);
     const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    const styles = getStyles(themeColors);
 
     useEffect(() => {
         if (mode !== 'resetPassword' || !oobCode) {
@@ -101,40 +104,40 @@ const ResetPasswordScreen = () => {
                         <TextInput
                             style={styles.input}
                             placeholder="Enter New Password"
-                            placeholderTextColor="#003366"
+                            placeholderTextColor={themeColors.secondary}
                             value={newPassword}
                             onChangeText={setNewPassword}
                             secureTextEntry={!passwordVisible}
                             autoCapitalize="none"
-                            color="#003366"
+                            color={themeColors.secondary}
                         />
                         <TouchableOpacity
                             style={styles.eyeIcon}
                             onPress={() => setPasswordVisible(!passwordVisible)}
                         >
-                            <Icon name={passwordVisible ? 'eye' : 'eye-slash'} size={20} color="#003366" />
+                            <Icon name={passwordVisible ? 'eye' : 'eye-slash'} size={20} color={themeColors.secondary} />
                         </TouchableOpacity>
-                        <Icon name="lock" size={20} color="#003366" style={styles.iconInsideInput} />
+                        <Icon name="lock" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                     </View>
 
                     <View style={styles.inputContainer}>
                         <TextInput
                             style={styles.input}
                             placeholder="Confirm New Password"
-                            placeholderTextColor="#003366"
+                            placeholderTextColor={themeColors.secondary}
                             value={confirmPassword}
                             onChangeText={setConfirmPassword}
                             secureTextEntry={!confirmPasswordVisible}
                             autoCapitalize="none"
-                            color="#003366"
+                            color={themeColors.secondary}
                         />
                         <TouchableOpacity
                             style={styles.eyeIcon}
                             onPress={() => setConfirmPasswordVisible(!confirmPasswordVisible)}
                         >
-                            <Icon name={confirmPasswordVisible ? 'eye' : 'eye-slash'} size={20} color="#003366" />
+                            <Icon name={confirmPasswordVisible ? 'eye' : 'eye-slash'} size={20} color={themeColors.secondary} />
                         </TouchableOpacity>
-                        <Icon name="lock" size={20} color="#003366" style={styles.iconInsideInput} />
+                        <Icon name="lock" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                     </View>
 
                     <TouchableOpacity style={styles.buttonContainer} onPress={handleResetPassword}>
@@ -145,7 +148,7 @@ const ResetPasswordScreen = () => {
                         <Text style={styles.link}>Back to Login</Text>
                     </TouchableOpacity>
 
-                    {loading && <ActivityIndicator size="large" color="#003366" style={styles.loadingIndicator} />}
+                    {loading && <ActivityIndicator size="large" color={themeColors.secondary} style={styles.loadingIndicator} />}
                 </KeyboardAvoidingView>
             </ScrollView>
         </SafeAreaView>
@@ -154,7 +157,7 @@ const ResetPasswordScreen = () => {
 
 export default ResetPasswordScreen;
 
-const styles = StyleSheet.create({
+const getStyles = (themeColors) => StyleSheet.create({
     safeArea: {
         flex: 1,
         backgroundColor: '#F9F9F9',
@@ -174,9 +177,9 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
         marginBottom: 20,
-        backgroundColor: '#800080',
+        backgroundColor: themeColors.primary,
         color: 'white',
-        borderColor: '#800080',
+        borderColor: themeColors.primary,
         borderWidth: 1,
         padding: 10,
         alignSelf: 'stretch',
@@ -186,7 +189,7 @@ const styles = StyleSheet.create({
     resetPrompt: {
         fontSize: 18,
         marginBottom: 10,
-        color: '#003366',
+        color: themeColors.secondary,
         fontFamily: 'serif',
     },
     inputContainer: {
@@ -217,11 +220,11 @@ const styles = StyleSheet.create({
         backgroundColor: 'white',
         fontSize: 16,
         fontFamily: 'serif',
-        color: '#003366',
+        color: themeColors.secondary,
     },
     buttonContainer: {
         borderRadius: 10,
-        backgroundColor: '#800080',
+        backgroundColor: themeColors.primary,
         paddingVertical: 10,
         paddingHorizontal: 20,
         marginVertical: 10,
@@ -237,7 +240,7 @@ const styles = StyleSheet.create({
         fontFamily: 'serif',
     },
     link: {
-        color: '#003366',
+        color: themeColors.secondary,
         fontSize: 16,
         marginTop: 10,
         textDecorationLine: 'underline',

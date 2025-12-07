@@ -1,5 +1,5 @@
 //addIncome.tsx
-import AddIncomecreen from './screens/AddIncomeScreen';
+import AddIncomeScreen from './screens/AddIncomeScreen';
 export default function AddIncome() {
-  return <AddIncomecreen />;
+  return <AddIncomeScreen />;
 }

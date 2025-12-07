@@ -50,7 +50,7 @@ const getLocalDateString = (date) => {
 
 const HomeScreen = () => {
   const router = useRouter();
-  const { currency, formatAmount, isDarkMode } = useAppContext();
+  const { currency, formatAmount, isDarkMode, themeColors } = useAppContext();
   const [activeScreen, setActiveScreen] = useState('home');
   const [activeTab, setActiveTab] = useState('expenses');
   const [balanceVisible, setBalanceVisible] = useState(false);
@@ -481,7 +481,7 @@ const HomeScreen = () => {
                   }}
                   style={styles.editButton}
                 >
-                  <MaterialCommunityIcons name="pencil" size={20} color="#003366" />
+                  <MaterialCommunityIcons name="pencil" size={20} color={themeColors.secondary} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => deleteItem(item.firebaseKey, activeTab === 'expenses' ? 'expenses' : 'incomes')}
@@ -497,7 +497,7 @@ const HomeScreen = () => {
     ));
   };
 
-  const styles = getStyles(isDarkMode);
+  const styles = getStyles(isDarkMode, themeColors);
 
   return (
     <>
@@ -514,7 +514,7 @@ const HomeScreen = () => {
                 <Text style={styles.filterModalTitle}>{currentMonthText}</Text>
               </View>
               <TouchableOpacity onPress={() => setShowDateModal(true)} style={styles.titleCalendarIcon}>
-                <MaterialCommunityIcons name="calendar" size={24} color={isDarkMode ? '#fff' : '#003366'} />
+                <MaterialCommunityIcons name="calendar" size={24} color={isDarkMode ? '#fff' : themeColors.secondary} />
               </TouchableOpacity>
             </View>
 
@@ -582,25 +582,25 @@ const HomeScreen = () => {
                 ...(selectedDate !== null && selectedMonth !== null ? {
                   [`${currentYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`]: {
                     selected: true,
-                    selectedColor: '#800080'
+                    selectedColor: themeColors.primary
                   }
                 } : {})
               }}
               theme={{
                 backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
                 calendarBackground: isDarkMode ? '#2A2A2A' : '#fff',
-                textSectionTitleColor: isDarkMode ? '#fff' : '#003366',
-                selectedDayBackgroundColor: '#800080',
+                textSectionTitleColor: isDarkMode ? '#fff' : themeColors.secondary,
+                selectedDayBackgroundColor: themeColors.primary,
                 selectedDayTextColor: '#fff',
-                todayTextColor: '#800080',
-                dayTextColor: isDarkMode ? '#fff' : '#003366',
+                todayTextColor: themeColors.primary,
+                dayTextColor: isDarkMode ? '#fff' : themeColors.secondary,
                 textDisabledColor: isDarkMode ? '#555' : '#d9e1e8',
-                dotColor: '#800080',
+                dotColor: themeColors.primary,
                 selectedDotColor: '#fff',
-                arrowColor: '#800080',
+                arrowColor: themeColors.primary,
                 disabledArrowColor: isDarkMode ? '#555' : '#d9e1e8',
-                monthTextColor: isDarkMode ? '#fff' : '#003366',
-                indicatorColor: '#800080',
+                monthTextColor: isDarkMode ? '#fff' : themeColors.secondary,
+                indicatorColor: themeColors.primary,
                 textDayFontFamily: 'serif',
                 textMonthFontFamily: 'serif',
                 textDayHeaderFontFamily: 'serif',
@@ -633,7 +633,7 @@ const HomeScreen = () => {
           </View>
           <TouchableOpacity style={styles.headerMonthButton} onPress={() => setShowFilterModal(true)}>
             <Text style={styles.headerMonthButtonText} numberOfLines={1} ellipsizeMode="tail">{currentMonthText}</Text>
-            <Ionicons name="chevron-down" size={18} color="#003366" />
+            <Ionicons name="chevron-down" size={18} color={themeColors.secondary} />
           </TouchableOpacity>
         </View>
 
@@ -719,16 +719,16 @@ const HomeScreen = () => {
           style={styles.footerItem}
           onPress={() => setActiveScreen('home')}
         >
-          <Icon name="home" size={24} color={activeScreen === 'home' ? '#003366' : (isDarkMode ? '#ccc' : '#333')} />
-          <Text style={[styles.iconLabel, activeScreen === 'home' && { color: '#003366', fontWeight: 'bold' }]}>Home</Text>
+          <Icon name="home" size={24} color={activeScreen === 'home' ? themeColors.secondary : (isDarkMode ? '#ccc' : '#333')} />
+          <Text style={[styles.iconLabel, activeScreen === 'home' && { color: themeColors.secondary, fontWeight: 'bold' }]}>Home</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.footerItem}
           onPress={() => router.push('/budget')}
         >
-          <Icon name="cash-multiple" size={24} color={activeScreen === 'budget' ? '#003366' : (isDarkMode ? '#ccc' : '#333')} />
-          <Text style={[styles.iconLabel, activeScreen === 'budget' && { color: '#003366', fontWeight: 'bold' }]}>Budget</Text>
+          <Icon name="cash-multiple" size={24} color={activeScreen === 'budget' ? themeColors.secondary : (isDarkMode ? '#ccc' : '#333')} />
+          <Text style={[styles.iconLabel, activeScreen === 'budget' && { color: themeColors.secondary, fontWeight: 'bold' }]}>Budget</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -748,16 +748,16 @@ const HomeScreen = () => {
           style={styles.footerItem}
           onPress={() => router.push('/statistics')}
         >
-          <Icon name="chart-line" size={24} color={activeScreen === 'statistics' ? '#003366' : (isDarkMode ? '#ccc' : '#333')} />
-          <Text style={[styles.iconLabel, activeScreen === 'statistics' && { color: '#003366', fontWeight: 'bold' }]}>Statistics</Text>
+          <Icon name="chart-line" size={24} color={activeScreen === 'statistics' ? themeColors.secondary : (isDarkMode ? '#ccc' : '#333')} />
+          <Text style={[styles.iconLabel, activeScreen === 'statistics' && { color: themeColors.secondary, fontWeight: 'bold' }]}>Statistics</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.footerItem}
          onPress={() => router.push('/settings')}
         >
-          <Icon name="cog" size={24} color={activeScreen === 'settings' ? '#003366' : (isDarkMode ? '#ccc' : '#333')} />
-          <Text style={[styles.iconLabel, activeScreen === 'settings' && { color: '#003366', fontWeight: 'bold' }]}>Settings</Text>
+          <Icon name="cog" size={24} color={activeScreen === 'settings' ? themeColors.secondary : (isDarkMode ? '#ccc' : '#333')} />
+          <Text style={[styles.iconLabel, activeScreen === 'settings' && { color: themeColors.secondary, fontWeight: 'bold' }]}>Settings</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -767,7 +767,7 @@ const HomeScreen = () => {
 
 export default HomeScreen;
 
-const getStyles = (isDarkMode) => StyleSheet.create({
+const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
@@ -783,10 +783,10 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   middleSection: {
     flex: 1,
     paddingHorizontal: 20,
-    backgroundColor: isDarkMode ? '#1E1E1E' : '#F5E3FF',
+    backgroundColor: isDarkMode ? '#1E1E1E' : themeColors.fourth,
   },
   iconCircle: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     padding: 8,
     borderRadius: 20,
   },
@@ -806,7 +806,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     marginRight: 8,
   },
   headerText: {
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontSize: 22,
     fontWeight: 'bold',
     fontFamily: 'serif',
@@ -819,11 +819,11 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     borderRadius: 12,
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     borderWidth: 1,
-    borderColor: '#003366',
+    borderColor: themeColors.secondary,
     flexShrink: 1,
   },
   headerMonthButtonText: {
-    color: '#003366',
+    color: themeColors.secondary,
     fontSize: 15,
     fontWeight: '600',
     marginRight: 6,
@@ -860,7 +860,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     alignItems: 'flex-end',
   },
   expenseCategory: {
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontWeight: 'bold',
     fontFamily: 'serif',
   },
@@ -909,11 +909,11 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     padding: 15,
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderColor: '#800880',
+    borderColor: themeColors.primary,
     borderWidth: 2,
   },
   totalLabel: {
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontWeight: 'bold',
     fontSize: 15,
     marginLeft: 10,
@@ -921,12 +921,12 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontFamily: 'serif',
   },
   totalAmount: {
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontWeight: 'bold',
     fontFamily: 'serif',
   },
   balanceCard: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     marginTop: 20,
     padding: 20,
     borderRadius: 15,
@@ -965,12 +965,12 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     borderRadius: 30,
   },
   tabActive: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     borderRadius: 30,
     marginHorizontal: 4,
   },
   tabText: {
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     marginLeft: 6,
     fontWeight: 'bold',
     fontFamily: 'serif',
@@ -1018,7 +1018,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     alignItems: 'center',
   },
     plusButton: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     borderRadius: 30,
     width: 60,
     height: 60,
@@ -1046,9 +1046,9 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     borderRadius: 25,
     marginTop: 15,
     borderWidth: 1,
-    borderColor: isDarkMode ? '#555' : '#003366',
+    borderColor: isDarkMode ? '#555' : themeColors.secondary,
     fontSize: 16,
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
   },
   modalContainer: {
     flex: 1,
@@ -1067,7 +1067,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     marginTop: 20,
   },
   clearButton: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
@@ -1080,7 +1080,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontWeight: 'bold',
   },
   closeButton: {
-    backgroundColor: '#003366',
+    backgroundColor: themeColors.secondary,
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
@@ -1107,13 +1107,13 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   },
   navigationButton: {
     fontSize: 24,
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     paddingHorizontal: 10,
   },
   yearText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
   },
   monthsGrid: {
     flexDirection: 'row',
@@ -1125,7 +1125,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     width: '30%',
     padding: 10,
     marginVertical: 5,
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     borderRadius: 8,
     alignItems: 'center',
   },
@@ -1136,7 +1136,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontFamily: 'serif',
   },
   switchToDateButton: {
-    backgroundColor: '#003366',
+    backgroundColor: themeColors.secondary,
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
@@ -1165,14 +1165,14 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   filterModalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontFamily: 'serif',
   },
   titleCalendarIcon: {
     padding: 5,
   },
   selectedMonthButton: {
-    backgroundColor: '#003366',
+    backgroundColor: themeColors.secondary,
   },
   selectedMonthText: {
     color: '#F9F9F9',
@@ -1185,7 +1185,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     marginTop: 20,
   },
   applyButton: {
-    backgroundColor: '#003366',
+    backgroundColor: themeColors.secondary,
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
@@ -1198,7 +1198,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontWeight: 'bold',
   },
   dateCalendarButton: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',

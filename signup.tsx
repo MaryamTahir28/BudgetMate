@@ -1,5 +1,7 @@
 //signup.tsx
+import { useAppContext } from '../AppContext';
 import SignUpScreen from './screens/SignUpScreen';
 export default function SignUp() {
-  return <SignUpScreen/>;
+  const { themeColors } = useAppContext();
+  return <SignUpScreen themeColors={themeColors} />;
 }

@@ -23,7 +23,7 @@ const initialCategories = [
 const AddIncomeScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { isDarkMode } = useAppContext();
+  const { isDarkMode, themeColors } = useAppContext();
 
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -103,7 +103,7 @@ const AddIncomeScreen = () => {
     }
   };
 
-  const styles = getStyles(isDarkMode);
+  const styles = getStyles(isDarkMode, themeColors);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -162,7 +162,7 @@ const AddIncomeScreen = () => {
                 setUseCustomCategory(false);
               }}
             >
-              <Text style={{ color: selectedCategory === cat ? '#fff' : '#800080' }}>
+              <Text style={{ color: selectedCategory === cat ? '#fff' : themeColors.primary }}>
                 {cat}
               </Text>
             </TouchableOpacity>
@@ -179,7 +179,7 @@ const AddIncomeScreen = () => {
               setSelectedCategory('');
             }}
           >
-            <MaterialCommunityIcons name="plus" size={18} color="#800080" />
+            <MaterialCommunityIcons name="plus" size={18} color={themeColors.primary} />
           </TouchableOpacity>
         </View>
 
@@ -227,7 +227,7 @@ const AddIncomeScreen = () => {
 
 export default AddIncomeScreen;
 
-const getStyles = (isDarkMode) => StyleSheet.create({
+const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
@@ -240,13 +240,13 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     marginBottom: 15,
   },
   label: {
     fontSize: 16,
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     marginTop: 12,
     fontFamily: 'serif',
   },
@@ -261,10 +261,10 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontFamily: 'serif',
   },
   tealInput: {
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
   },
   tealText: {
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontFamily: 'serif',
   },
   categoryWrap: {
@@ -274,20 +274,20 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   },
   catBox: {
     borderWidth: 1,
-    borderColor: '#800080',
+    borderColor: themeColors.primary,
     padding: 8,
     margin: 4,
     borderRadius: 8,
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
   },
   catBoxSelected: {
-    backgroundColor: '#800080',
-    borderColor: '#800080',
+    backgroundColor: themeColors.primary,
+    borderColor: themeColors.primary,
   },
   saveButton: {
     marginTop: 20,
     width: 150,
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     paddingVertical: 12,
     alignItems: 'center',
     borderRadius: 8,
@@ -312,7 +312,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   cancelButton: {
     marginTop: 19,
     width: 150,
-    backgroundColor: '#003366',
+    backgroundColor: themeColors.secondary,
     paddingVertical: 12,
     alignItems: 'center',
     borderRadius: 8,

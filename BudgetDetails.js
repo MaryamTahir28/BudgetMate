@@ -16,7 +16,7 @@ import { auth, database } from "../../firebaseConfig";
 
 export default function BudgetDetails() {
   const { id, category } = useLocalSearchParams();
-  const { isDarkMode, formatAmount } = useAppContext();
+  const { isDarkMode, formatAmount, themeColors } = useAppContext();
   const [expenses, setExpenses] = useState([]);
 
   useEffect(() => {
@@ -36,7 +36,7 @@ export default function BudgetDetails() {
     });
   }, [category, id]);
 
-  const dynamicStyles = getStyles(isDarkMode);
+  const dynamicStyles = getStyles(isDarkMode, themeColors);
 
   return (
     <SafeAreaView style={dynamicStyles.container}>
@@ -57,7 +57,7 @@ export default function BudgetDetails() {
   );
 }
 
-const getStyles = (isDarkMode) => StyleSheet.create({
+const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
@@ -68,13 +68,13 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 10,
-    color: "#800080",
+    color: themeColors.primary,
     fontFamily: 'serif',
   },
   card: {
     padding: 12,
     borderWidth: 1,
-    borderColor: "#800080",
+    borderColor: themeColors.primary,
     marginVertical: 6,
     borderRadius: 8,
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
@@ -82,13 +82,13 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     marginBottom: 4
   },
   cardText: {
     fontSize: 14,
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontFamily: 'serif',
     marginBottom: 2
   }

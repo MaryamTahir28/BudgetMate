@@ -1,4 +1,3 @@
-//WishlistScreen.js
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
 import { onValue, push, ref, remove } from "firebase/database";
@@ -8,7 +7,6 @@ import {
   FlatList,
   Platform,
   SafeAreaView,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -22,7 +20,7 @@ import { auth, database } from "../../firebaseConfig";
 export default function WishlistScreen() {
 
   const router = useRouter();
-  const { isDarkMode, formatAmount, currency, convertFromPKR, convertToPKR } = useAppContext();
+  const { isDarkMode, formatAmount, currency, convertFromPKR, convertToPKR, themeColors } = useAppContext();
 
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -112,51 +110,53 @@ export default function WishlistScreen() {
     );
   };
 
-  const styles = getStyles(isDarkMode);
+  const styles = getStyles(isDarkMode, themeColors);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Manage Wishlist</Text>
-
-        <Text style={styles.label}>Item Name</Text>
-        <TextInput
-          style={[styles.input, styles.tealInput]}
-          placeholder="e.g. Laptop, Phone"
-          value={name}
-          onChangeText={setName}
-          placeholderTextColor="#aaa"
-          autoCorrect={false}
-        />
-
-        <Text style={styles.label}>Required Amount</Text>
-        <TextInput
-          style={[styles.input, styles.tealInput]}
-          placeholder="Enter amount"
-          keyboardType="numeric"
-          value={amount}
-          onChangeText={(text) => {
-            // Only allow positive numbers and decimals
-            const numericValue = text.replace(/[^0-9.]/g, '');
-            // Prevent multiple decimal points
-            const parts = numericValue.split('.');
-            if (parts.length > 2) {
-              setAmount(parts[0] + '.' + parts.slice(1).join(''));
-            } else {
-              setAmount(numericValue);
-            }
-          }}
-          placeholderTextColor="#aaa"
-          autoCorrect={false}
-        />
-
-        <TouchableOpacity style={styles.saveButton} onPress={addWishlistItem}>
-          <Text style={styles.saveText}>Add Item</Text>
-        </TouchableOpacity>
-
       <FlatList
         data={wishlist}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={
+          <>
+            <Text style={styles.title}>Manage Wishlist</Text>
+
+            <Text style={styles.label}>Item Name</Text>
+            <TextInput
+              style={[styles.input, styles.tealInput]}
+              placeholder="e.g. Laptop, Phone"
+              value={name}
+              onChangeText={setName}
+              placeholderTextColor="#aaa"
+              autoCorrect={false}
+            />
+
+            <Text style={styles.label}>Required Amount</Text>
+            <TextInput
+              style={[styles.input, styles.tealInput]}
+              placeholder="Enter amount"
+              keyboardType="numeric"
+              value={amount}
+              onChangeText={(text) => {
+                // Only allow positive numbers and decimals
+                const numericValue = text.replace(/[^0-9.]/g, '');
+                // Prevent multiple decimal points
+                const parts = numericValue.split('.');
+                if (parts.length > 2) {
+                  setAmount(parts[0] + '.' + parts.slice(1).join(''));
+                } else {
+                  setAmount(numericValue);
+                }
+              }}
+              placeholderTextColor="#aaa"
+              autoCorrect={false}
+            />
+
+            <TouchableOpacity style={styles.saveButton} onPress={addWishlistItem}>
+              <Text style={styles.saveText}>Add Item</Text>
+            </TouchableOpacity>
+          </>
+        }
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.card} onPress={() => router.push({ pathname: "/wishlistDetails", params: { id: item.id } })}>
             <View style={styles.cardHeader}>
@@ -166,7 +166,7 @@ export default function WishlistScreen() {
                   onPress={() => router.push({ pathname: "/editWishlist", params: { id: item.id } })}
                   style={styles.editButton}
                 >
-                  <MaterialCommunityIcons name="pencil" size={20} color="#003366" />
+                  <MaterialCommunityIcons name="pencil" size={20} color={themeColors.secondary} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => handleDelete(item.id)}
@@ -179,13 +179,13 @@ export default function WishlistScreen() {
             <Text style={styles.cardText}>Amount: {formatAmount(item.amount)}</Text>
           </TouchableOpacity>
         )}
+        contentContainerStyle={styles.container}
       />
-      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const getStyles = (isDarkMode) => StyleSheet.create({
+const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
@@ -198,13 +198,13 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     marginBottom: 15,
   },
   label: {
     fontSize: 16,
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     marginTop: 12,
     fontFamily: 'serif',
   },
@@ -218,10 +218,10 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     fontFamily: 'serif',
   },
-  tealInput: { color: isDarkMode ? '#fff' : '#003366' },
+  tealInput: { color: isDarkMode ? '#fff' : themeColors.secondary },
   saveButton: {
     marginTop: 20,
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     paddingVertical: 12,
     alignItems: 'center',
     borderRadius: 8,
@@ -237,7 +237,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   card: {
     padding: 15,
     borderWidth: 1,
-    borderColor: '#800080',
+    borderColor: themeColors.primary,
     marginVertical: 8,
     borderRadius: 8,
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
@@ -251,7 +251,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   cardTitle: {
     fontWeight: 'bold',
     fontSize: 18,
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     flex: 1,
   },
@@ -271,7 +271,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   },
   cardText: {
     fontSize: 16,
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontFamily: 'serif',
     marginBottom: 4
   },

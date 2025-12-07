@@ -29,7 +29,7 @@ const showAlert = (title, message) => {
   }
 };
 
-const SignupScreen = () => {
+const SignupScreen = ({ themeColors }) => {
     const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -38,6 +38,8 @@ const SignupScreen = () => {
     const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+
+    const styles = getStyles(themeColors);
 
     const validatePassword = (password) => {
         const minLength = 8;
@@ -127,54 +129,54 @@ const SignupScreen = () => {
                     <TextInput
                         style={styles.input}
                         placeholder="Enter Email"
-                        placeholderTextColor="#003366"
+                        placeholderTextColor={themeColors.secondary}
                         value={email}
                         onChangeText={setEmail}
                         keyboardType="email-address"
                         autoCapitalize="none"
-                        color="#003366"
+                        color={themeColors.secondary}
                     />
-                    <Icon name="envelope" size={20} color="#003366" style={styles.iconInsideInput} />
+                    <Icon name="envelope" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                 </View>
 
                 <View style={styles.inputContainer}>
                     <TextInput
                         style={styles.input}
                         placeholder="Enter Password"
-                        placeholderTextColor="#003366"
+                        placeholderTextColor={themeColors.secondary}
                         value={password}
                         onChangeText={setPassword}
                         secureTextEntry={!passwordVisible}
                         autoCapitalize="none"
-                        color="#003366"
+                        color={themeColors.secondary}
                     />
                     <TouchableOpacity
                         style={styles.eyeIcon}
                         onPress={() => setPasswordVisible(!passwordVisible)}
                     >
-                        <Icon name={passwordVisible ? 'eye' : 'eye-slash'} size={20} color="#003366" />
+                        <Icon name={passwordVisible ? 'eye' : 'eye-slash'} size={20} color={themeColors.secondary} />
                     </TouchableOpacity>
-                    <Icon name="lock" size={20} color="#003366" style={styles.iconInsideInput} />
+                    <Icon name="lock" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                 </View>
 
                 <View style={styles.inputContainer}>
                     <TextInput
                         style={styles.input}
                         placeholder="Confirm Password"
-                        placeholderTextColor="#003366"
+                        placeholderTextColor={themeColors.secondary}
                         value={confirmPassword}
                         onChangeText={setConfirmPassword}
                         secureTextEntry={!confirmPasswordVisible}
                         autoCapitalize="none"
-                        color="#003366"
+                        color={themeColors.secondary}
                     />
                     <TouchableOpacity
                         style={styles.eyeIcon}
                         onPress={() => setConfirmPasswordVisible(!confirmPasswordVisible)}
                     >
-                        <Icon name={confirmPasswordVisible ? 'eye' : 'eye-slash'} size={20} color="#003366" />
+                        <Icon name={confirmPasswordVisible ? 'eye' : 'eye-slash'} size={20} color={themeColors.secondary} />
                     </TouchableOpacity>
-                    <Icon name="lock" size={20} color="#003366" style={styles.iconInsideInput} />
+                    <Icon name="lock" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                 </View>
 
                 {error && <Text style={styles.errorText}>{error}</Text>}
@@ -187,7 +189,7 @@ const SignupScreen = () => {
                     <Text style={styles.link}>Already have an account? Login</Text>
                 </TouchableOpacity>
 
-                {loading && <ActivityIndicator size="large" color="#003366" style={styles.loadingIndicator} />}
+                {loading && <ActivityIndicator size="large" color={themeColors.secondary} style={styles.loadingIndicator} />}
             </KeyboardAvoidingView>
         </ScrollView>
         </SafeAreaView>
@@ -196,7 +198,7 @@ const SignupScreen = () => {
 
 export default SignupScreen;
 
-const styles = StyleSheet.create({
+const getStyles = (themeColors) => StyleSheet.create({
     safeArea: {
             flex: 1,
             backgroundColor: '#F9F9F9',
@@ -216,9 +218,9 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
         marginBottom: 20,
-        backgroundColor: '#800080',
+        backgroundColor: themeColors.primary,
         color: 'white',
-        borderColor: '#800080',
+        borderColor: themeColors.primary,
         borderWidth: 1,
         padding: 10,
         alignSelf: 'stretch',
@@ -234,7 +236,7 @@ const styles = StyleSheet.create({
     signUpPrompt: {
         fontSize: 18,
         marginBottom: 10,
-        color: '#003366',
+        color: themeColors.secondary,
         fontFamily: 'serif',
     },
     inputContainer: {
@@ -265,11 +267,11 @@ const styles = StyleSheet.create({
         backgroundColor: 'white',
         fontSize: 16,
         fontFamily: 'serif',
-        color: '#003366',
+        color: themeColors.secondary,
     },
     buttonContainer: {
         borderRadius: 10,
-        backgroundColor: '#800080',
+        backgroundColor: themeColors.primary,
         paddingVertical: 10,
         paddingHorizontal: 20,
         marginVertical: 10,
@@ -285,7 +287,7 @@ const styles = StyleSheet.create({
         fontFamily: 'serif',
     },
     link: {
-        color: '#003366',
+        color: themeColors.secondary,
         fontSize: 16,
         marginTop: 10,
         textDecorationLine: 'underline',

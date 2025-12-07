@@ -27,12 +27,14 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAppContext } from '../../AppContext';
+import { THEMES, useAppContext } from '../../AppContext';
 
 const SettingsScreen = () => {
   const router = useRouter();
   const user = auth.currentUser;
-  const { isDarkMode, currency, toggleDarkMode, changeCurrency } = useAppContext();
+  const { isDarkMode, currency, theme, appearance, toggleDarkMode, changeCurrency, changeTheme, changeAppearance, themeColors } = useAppContext();
+
+
 
   // State for profile
   const [displayName, setDisplayName] = useState(user?.displayName || '');
@@ -44,6 +46,7 @@ const SettingsScreen = () => {
   const [showOldPassword, setShowOldPassword] = useState(false);
 
   const currencies = ['PKR', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'];
+  const themes = Object.values(THEMES).map(theme => theme.name);
 
   const handleLogout = async () => {
     Alert.alert(
@@ -132,6 +135,7 @@ const SettingsScreen = () => {
 
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const [showThemeModal, setShowThemeModal] = useState(false);
 
   const handleDeactivateAccount = () => {
     Alert.alert(
@@ -236,7 +240,12 @@ const SettingsScreen = () => {
     Alert.alert('Success', 'Currency updated successfully');
   };
 
-  const styles = getStyles(isDarkMode);
+  const handleThemeChange = async (newTheme) => {
+    await changeTheme(newTheme);
+    Alert.alert('Success', 'Theme updated successfully');
+  };
+
+  const styles = getStyles(isDarkMode, themeColors);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -287,6 +296,18 @@ const SettingsScreen = () => {
             onPress={() => setShowCurrencyModal(true)}
           >
             <Text style={styles.currencyButtonText}>{currency}</Text>
+            <Ionicons name="chevron-forward" size={20} color={isDarkMode ? '#fff' : '#333'} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Theme Selection Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Theme</Text>
+          <TouchableOpacity
+            style={styles.currencyButton}
+            onPress={() => setShowThemeModal(true)}
+          >
+            <Text style={styles.currencyButtonText}>{theme}</Text>
             <Ionicons name="chevron-forward" size={20} color={isDarkMode ? '#fff' : '#333'} />
           </TouchableOpacity>
         </View>
@@ -590,7 +611,7 @@ const SettingsScreen = () => {
                       {cur}
                     </Text>
                     {currency === cur && (
-                      <Ionicons name="checkmark" size={20} color="#800080" />
+                      <Ionicons name="checkmark" size={20} color={themeColors.primary} />
                     )}
                   </TouchableOpacity>
                 ))}
@@ -599,6 +620,68 @@ const SettingsScreen = () => {
                 <TouchableOpacity
                   style={[styles.button, styles.modalButton, styles.cancelButton]}
                   onPress={() => setShowCurrencyModal(false)}
+                >
+                  <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Theme Modal */}
+        <Modal
+          visible={showThemeModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowThemeModal(false)}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Select Theme</Text>
+              <ScrollView style={styles.currencyList}>
+                {themes.map((thm) => {
+                  const themeKey = Object.keys(THEMES).find(key => THEMES[key].name === thm);
+                  const localThemeColors = THEMES[themeKey];
+                  return (
+                    <TouchableOpacity
+                      key={thm}
+                      style={[
+                        styles.currencyOption,
+                        theme === thm && styles.currencyOptionSelected
+                      ]}
+                      onPress={() => {
+                        handleThemeChange(thm);
+                        setShowThemeModal(false);
+                      }}
+                    >
+                      <View style={styles.themeOptionContent}>
+                        <View style={styles.colorSwatches}>
+                          <View style={[styles.colorSwatch, { backgroundColor: localThemeColors.primary }]} />
+                          <View style={[styles.colorSwatch, { backgroundColor: localThemeColors.secondary }]} />
+                        </View>
+                        <Text
+                          style={[
+                            styles.currencyOptionText,
+                            theme === thm && styles.currencyOptionTextSelected
+                          ]}
+                        >
+                          {thm}
+                        </Text>
+                      </View>
+                      {theme === thm && (
+                        <Ionicons name="checkmark" size={20} color={localThemeColors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.button, styles.modalButton, styles.cancelButton]}
+                  onPress={() => setShowThemeModal(false)}
                 >
                   <Text style={styles.buttonText}>Cancel</Text>
                 </TouchableOpacity>
@@ -663,7 +746,7 @@ const SettingsScreen = () => {
 
 export default SettingsScreen;
 
-const getStyles = (isDarkMode) => StyleSheet.create({
+const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
@@ -677,7 +760,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontSize: 24,
     marginBottom: 20,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     textAlign: 'center',
   },
   section: {
@@ -694,7 +777,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     marginBottom: 15,
   },
   input: {
@@ -704,7 +787,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     borderRadius: 10,
     marginBottom: 15,
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     fontSize: 16,
   },
   inputContainer: {
@@ -718,12 +801,12 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     padding: 5,
   },
   button: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
     marginBottom: 15,
-    shadowColor: '#800080',
+    shadowColor: themeColors.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -735,12 +818,12 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontSize: 16,
   },
   logoutButton: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     padding: 18,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 30,
-    shadowColor: '#800080',
+    shadowColor: themeColors.primary,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.4,
     shadowRadius: 6,
@@ -772,7 +855,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     marginBottom: 25,
     textAlign: 'center',
   },
@@ -789,18 +872,18 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     backgroundColor: '#8E8E93',
   },
   dangerButton: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
   },
   dangerButtonEnabled: {
-    backgroundColor: '#800080',
-    shadowColor: '#800080',
+    backgroundColor: themeColors.primary,
+    shadowColor: themeColors.primary,
   },
   dangerButtonDisabled: {
     backgroundColor: '#cccccc',
     shadowColor: '#cccccc',
   },
   buttonSelected: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
   },
   picker: {
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
@@ -882,7 +965,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   },
   currencyButtonText: {
     fontSize: 16,
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
   },
   currencyList: {
     maxHeight: 200,
@@ -901,10 +984,27 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   },
   currencyOptionText: {
     fontSize: 16,
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
   },
   currencyOptionTextSelected: {
     fontWeight: 'bold',
-    color: '#800080',
+    color: themeColors.primary,
+  },
+  themeOptionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  colorSwatches: {
+    flexDirection: 'row',
+    marginRight: 15,
+  },
+  colorSwatch: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 5,
+    borderWidth: 1,
+    borderColor: isDarkMode ? '#555' : '#ddd',
   },
 });

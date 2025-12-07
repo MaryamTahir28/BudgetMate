@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import { useAppContext } from '../../AppContext';
 import { auth, database } from '../../firebaseConfig'; // adjust path as needed
 
 const showAlert = (title, message) => {
@@ -32,10 +33,13 @@ const showAlert = (title, message) => {
 };
 const LoginScreen = () => {
     const router = useRouter();
+    const { themeColors } = useAppContext();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [passwordVisible, setPasswordVisible] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    const styles = getStyles(themeColors);
 
     const handleLogin = async () => {
   if (!email || !password) {
@@ -253,34 +257,34 @@ const LoginScreen = () => {
                     <TextInput
                         style={styles.input}
                         placeholder="Enter Email"
-                        placeholderTextColor="#003366"
+                        placeholderTextColor={themeColors.secondary}
                         value={email}
                         onChangeText={setEmail}
                         keyboardType="email-address"
                         autoCapitalize="none"
-                        color="#003366"
+                        color={themeColors.secondary}
                     />
-                    <Icon name="envelope" size={20} color="#003366" style={styles.iconInsideInput} />
+                    <Icon name="envelope" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                 </View>
 
                 <View style={styles.inputContainer}>
                     <TextInput
                         style={styles.input}
                         placeholder="Enter Password"
-                        placeholderTextColor="#003366"
+                        placeholderTextColor={themeColors.secondary}
                         value={password}
                         onChangeText={setPassword}
                         secureTextEntry={!passwordVisible}
                         autoCapitalize="none"
-                        color="#003366"
+                        color={themeColors.secondary}
                     />
                     <TouchableOpacity
                         style={styles.eyeIcon}
                         onPress={() => setPasswordVisible(!passwordVisible)}
                     >
-                        <Icon name={passwordVisible ? 'eye' : 'eye-slash'} size={20} color="#003366" />
+                        <Icon name={passwordVisible ? 'eye' : 'eye-slash'} size={20} color={themeColors.secondary} />
                     </TouchableOpacity>
-                    <Icon name="lock" size={20} color="#003366" style={styles.iconInsideInput} />
+                    <Icon name="lock" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                 </View>
 
                 <TouchableOpacity style={styles.buttonContainer} onPress={handleLogin}>
@@ -299,7 +303,7 @@ const LoginScreen = () => {
                     <Text style={styles.link}>Reactivate Account</Text>
                 </TouchableOpacity>
 
-                {loading && <ActivityIndicator size="large" color="#003366" style={styles.loadingIndicator} />}
+                {loading && <ActivityIndicator size="large" color={themeColors.primary} style={styles.loadingIndicator} />}
             </KeyboardAvoidingView>
         </ScrollView>
         </SafeAreaView>
@@ -308,7 +312,7 @@ const LoginScreen = () => {
 
 export default LoginScreen;
 
-const styles = StyleSheet.create({
+const getStyles = (themeColors) => StyleSheet.create({
     safeArea: {
         flex: 1,
         backgroundColor: '#F9F9F9',
@@ -328,9 +332,9 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
         marginBottom: 20,
-        backgroundColor: '#800080',
+        backgroundColor: themeColors.primary,
         color: 'white',
-        borderColor: '#800080',
+        borderColor: themeColors.primary,
         borderWidth: 1,
         padding: 10,
         alignSelf: 'stretch',
@@ -346,7 +350,7 @@ const styles = StyleSheet.create({
     loginPrompt: {
         fontSize: 18,
         marginBottom: 10,
-        color: '#003366',
+        color: themeColors.primary,
         fontFamily: 'serif',
     },
     inputContainer: {
@@ -377,11 +381,11 @@ const styles = StyleSheet.create({
         backgroundColor: 'white',
         fontSize: 16,
         fontFamily: 'serif',
-        color: '#003366',
+        color: themeColors.secondary,
     },
     buttonContainer: {
         borderRadius: 10,
-        backgroundColor: '#800080',
+        backgroundColor: themeColors.primary,
         paddingVertical: 10,
         paddingHorizontal: 20,
         marginVertical: 10,
@@ -397,7 +401,7 @@ const styles = StyleSheet.create({
         fontFamily: 'serif',
     },
     link: {
-        color: '#003366',
+        color: themeColors.primary,
         fontSize: 16,
         marginTop: 10,
         textDecorationLine: 'underline',

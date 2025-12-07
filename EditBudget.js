@@ -20,7 +20,7 @@ import { auth, database } from "../../firebaseConfig";
 export default function EditBudget() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { isDarkMode, convertFromPKR, convertToPKR, currency } = useAppContext();
+  const { isDarkMode, convertFromPKR, convertToPKR, currency, themeColors } = useAppContext();
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(true);
@@ -66,7 +66,7 @@ export default function EditBudget() {
     });
   };
 
-  const styles = getStyles(isDarkMode);
+  const styles = getStyles(isDarkMode, themeColors);
 
   if (loading) {
     return (
@@ -124,7 +124,7 @@ export default function EditBudget() {
   );
 }
 
-const getStyles = (isDarkMode) => StyleSheet.create({
+const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
@@ -137,13 +137,13 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     marginBottom: 15,
   },
   label: {
     fontSize: 16,
-    color: isDarkMode ? '#fff' : '#003366',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
     marginTop: 12,
     fontFamily: 'serif',
   },
@@ -157,7 +157,9 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     fontFamily: 'serif',
   },
-  tealInput: { color: isDarkMode ? '#fff' : '#003366' },
+  tealInput: { 
+    color: isDarkMode ? '#fff' : themeColors.secondary 
+  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -165,7 +167,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     marginTop: 20,
   },
   saveButton: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     paddingVertical: 12,
     paddingHorizontal: 20,
     alignItems: 'center',
@@ -178,7 +180,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontWeight: 'bold'
   },
   cancelButton: {
-    backgroundColor: '#003366',
+    backgroundColor: themeColors.secondary,
     paddingVertical: 12,
     paddingHorizontal: 20,
     alignItems: 'center',

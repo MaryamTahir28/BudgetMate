@@ -19,7 +19,7 @@ import { auth, database } from '../../firebaseConfig';
 
 const SavingsGoalsScreen = () => {
   const router = useRouter();
-  const { isDarkMode, currency, formatAmount, convertToPKR, convertFromPKR } = useAppContext();
+  const { isDarkMode, currency, formatAmount, convertToPKR, convertFromPKR, themeColors } = useAppContext();
   const user = auth.currentUser;
 
   const [savingsGoals, setSavingsGoals] = useState([]);
@@ -192,7 +192,7 @@ const SavingsGoalsScreen = () => {
   // Update savedAmount manually (for demo, this could link to actual saved income allocation)
   // For now, not implemented auto tracking, can be expanded later.
 
-  const styles = getStyles(isDarkMode);
+  const styles = getStyles(isDarkMode, themeColors);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -394,7 +394,7 @@ const SavingsGoalsScreen = () => {
 
 export default SavingsGoalsScreen;
 
-const getStyles = (isDarkMode) => StyleSheet.create({
+const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: isDarkMode ? '#121212' : '#F9F9F9',
@@ -404,7 +404,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     padding: 18,
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     marginTop: 50,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -422,7 +422,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     textShadowRadius: 2,
   },
   addButton: {
-    backgroundColor: '#520052',
+    backgroundColor: themeColors.third,
     borderRadius: 30,
     width: 42,
     height: 42,
@@ -457,7 +457,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     marginVertical: 10,
     padding: 15,
     borderRadius: 15,
-    borderColor: '#800080',
+    borderColor: themeColors.primary,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOpacity: 0.1,
@@ -471,7 +471,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   cardTitle: {
     fontWeight: 'bold',
     fontSize: 20,
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     flex: 1,
     textShadowColor: 'rgba(128, 0, 128, 0.3)',
@@ -487,7 +487,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     marginTop: 5,
     marginBottom: 5,
     fontStyle: 'italic',
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     fontSize: 16,
   },
@@ -498,12 +498,12 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     marginVertical: 8,
   },
   progressBarFill: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.secondary,
     height: 12,
     borderRadius: 6,
   },
   label: {
-    color: '#800080',
+    color: themeColors.primary,
     fontWeight: 'bold',
     fontFamily: 'serif',
     marginBottom: 6,
@@ -512,11 +512,11 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#800080',
+    borderColor: themeColors.primary,
     padding: 10,
     borderRadius: 8,
     fontSize: 16,
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     backgroundColor: isDarkMode ? '#1E1E1E' : '#fff',
   },
@@ -531,10 +531,10 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     borderRadius: 20,
     marginHorizontal: 5,
     borderWidth: 1,
-    borderColor: '#800080',
+    borderColor: themeColors.primary,
   },
   durationText: {
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     fontSize: 16,
   },
@@ -542,7 +542,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
     fontFamily: 'serif',
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     borderRadius: 15,
     paddingVertical: 2,
     paddingHorizontal: 8,
@@ -552,7 +552,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   wishlistSelector: {
     maxHeight: 150,
     borderWidth: 1,
-    borderColor: '#800080',
+    borderColor: themeColors.primary,
     borderRadius: 8,
     backgroundColor: isDarkMode ? '#1E1E1E' : '#fff',
     marginTop: 5,
@@ -565,7 +565,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     backgroundColor: '#f1c5f1ff',
   },
   wishText: {
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     fontSize: 16,
   },
@@ -589,7 +589,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     textAlign: 'center',
     marginBottom: 10,
@@ -603,20 +603,20 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     marginTop: 25,
   },
   button: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     borderRadius: 15,
     paddingVertical: 12,
     paddingHorizontal: 20,
     flex: 1,
     marginHorizontal: 5,
-    shadowColor: '#800080',
+    shadowColor: themeColors.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
   },
   cancelButton: {
-    backgroundColor: '#003366'
+    backgroundColor: themeColors.secondary
   },
   buttonText: {
     color: '#fff',
@@ -626,7 +626,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     textAlign: 'center',
   },
   updateSavedAmountButton: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     paddingVertical: 8,
     paddingHorizontal: 15,
     borderRadius: 10,

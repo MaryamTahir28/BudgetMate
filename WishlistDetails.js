@@ -18,10 +18,12 @@ import { auth, database } from '../../firebaseConfig';
 export default function WishlistDetails() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { isDarkMode, formatAmount, convertFromPKR } = useAppContext();
+  const { isDarkMode, formatAmount, convertFromPKR, themeColors } = useAppContext();
 
   const [user, setUser] = useState(null);
   const [wish, setWish] = useState(null);
+
+  const styles = getStyles(themeColors);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -85,7 +87,7 @@ export default function WishlistDetails() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (themeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
@@ -100,7 +102,7 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: 'bold',
     marginBottom: 30,
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
     textAlign: 'center',
   },
@@ -112,16 +114,16 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: themeColors.secondary,
     fontFamily: 'serif',
   },
   value: {
     fontSize: 18,
-    color: '#800080',
+    color: themeColors.primary,
     fontFamily: 'serif',
   },
   button: {
-    backgroundColor: '#800080',
+    backgroundColor: themeColors.primary,
     padding: 15,
     borderRadius: 10,
     marginTop: 30,
