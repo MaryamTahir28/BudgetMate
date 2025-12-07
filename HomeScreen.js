@@ -63,8 +63,9 @@ const HomeScreen = () => {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(null); // 0-11
+  const [selectedMonths, setSelectedMonths] = useState([]); // array of month indices 0-11
   const [selectedDate, setSelectedDate] = useState(null); // day of month or null
+  const [selectedMonth, setSelectedMonth] = useState(null); // month index for selected date
   const [selectedDateRange, setSelectedDateRange] = useState(() => {
     const now = new Date();
     const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -85,8 +86,15 @@ const HomeScreen = () => {
 
   // Function to handle month selection
   const handleMonthSelect = (monthIndex) => {
-    setSelectedMonth(monthIndex);
+    setSelectedMonths(prev => {
+      if (prev.includes(monthIndex)) {
+        return prev.filter(m => m !== monthIndex);
+      } else {
+        return [...prev, monthIndex];
+      }
+    });
     setSelectedDate(null); // Clear date if month is selected
+    setSelectedMonth(null); // Clear calendar month
   };
 
   // Function to handle date selection from calendar
@@ -119,6 +127,19 @@ const HomeScreen = () => {
         endDate: getLocalDateString(endDate)
       });
       setCurrentMonthText(`${monthNames[selectedMonth]} ${currentYear} `);
+    } else if (selectedMonths.length > 0) {
+      // Multiple months filter
+      const sortedMonths = [...selectedMonths].sort((a, b) => a - b);
+      const minMonth = sortedMonths[0];
+      const maxMonth = sortedMonths[sortedMonths.length - 1];
+      const startDate = new Date(currentYear, minMonth, 1);
+      const endDate = new Date(currentYear, maxMonth + 1, 0);
+      setSelectedDateRange({
+        startDate: getLocalDateString(startDate),
+        endDate: getLocalDateString(endDate)
+      });
+      const selectedMonthNames = sortedMonths.map(m => monthNames[m]);
+      setCurrentMonthText(`${selectedMonthNames.join(', ')} ${currentYear}`);
     }
 
     setShowFilterModal(false);
@@ -139,6 +160,7 @@ const HomeScreen = () => {
     setCurrentMonthText(`${monthNames[now.getMonth()]} ${now.getFullYear()} `);
     setSelectedMonth(null);
     setSelectedDate(null);
+    setSelectedMonths([]);
     setShowFilterModal(false);
     setExpensesMonthOverride(null);
   };
@@ -515,12 +537,12 @@ const HomeScreen = () => {
                   onPress={() => handleMonthSelect(index)}
                   style={[
                     styles.monthButton,
-                    selectedMonth === index && styles.selectedMonthButton
+                    (selectedMonths.includes(index) || selectedMonth === index) && styles.selectedMonthButton
                   ]}
                 >
                   <Text style={[
                     styles.monthText,
-                    selectedMonth === index && styles.selectedMonthText
+                    (selectedMonths.includes(index) || selectedMonth === index) && styles.selectedMonthText
                   ]}>
                     {month}
                   </Text>
@@ -610,7 +632,7 @@ const HomeScreen = () => {
             <Text style={styles.headerText}>BudgetMate</Text>
           </View>
           <TouchableOpacity style={styles.headerMonthButton} onPress={() => setShowFilterModal(true)}>
-            <Text style={styles.headerMonthButtonText}>{currentMonthText}</Text>
+            <Text style={styles.headerMonthButtonText} numberOfLines={1} ellipsizeMode="tail">{currentMonthText}</Text>
             <Ionicons name="chevron-down" size={18} color="#003366" />
           </TouchableOpacity>
         </View>
@@ -798,6 +820,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
     borderWidth: 1,
     borderColor: '#003366',
+    flexShrink: 1,
   },
   headerMonthButtonText: {
     color: '#003366',

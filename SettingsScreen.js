@@ -3,7 +3,6 @@
 import { auth, database } from '@/firebaseConfig'; // adjust the path to your firebase config
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -13,10 +12,11 @@ import {
   signOut,
   updateProfile
 } from 'firebase/auth';
-import { ref, remove } from 'firebase/database';
+import { ref, remove, update } from 'firebase/database';
 import { useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -126,8 +126,61 @@ const SettingsScreen = () => {
   const [deactivateConfirmation, setDeactivateConfirmation] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [showDeactivateConfirmModal, setShowDeactivateConfirmModal] = useState(false);
+  const [isDeactivating, setIsDeactivating] = useState(false);
+  const [deactivateConfirmText, setDeactivateConfirmText] = useState('');
+
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+
   const handleDeactivateAccount = () => {
-    setShowDeactivateModal(true);
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Proceed',
+          onPress: () => setShowDeactivateModal(true)
+        }
+      ]
+    );
+  };
+
+  const handleDeactivateConfirm = () => {
+    setShowDeactivateConfirmModal(true);
+  };
+
+  const confirmDeactivateConfirm = async () => {
+    setIsDeactivating(true);
+    try {
+      if (user) {
+        // Set deactivated: true in database
+        const userRef = ref(database, `users/${user.uid}`);
+        await update(userRef, { deactivated: true });
+
+        // Sign out and redirect to login
+        await signOut(auth);
+        await AsyncStorage.clear();
+
+        Alert.alert(
+          'Account Deactivated',
+          'Your account has been deactivated. All data is saved and you can reactivate it later.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.replace('/login')
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Deactivation error:', error);
+      Alert.alert('Error', 'Failed to deactivate account. Please try again.');
+    } finally {
+      setIsDeactivating(false);
+      setShowDeactivateConfirmModal(false);
+    }
   };
 
   const confirmDeactivateAccount = async () => {
@@ -229,16 +282,13 @@ const SettingsScreen = () => {
         {/* Currency Selection Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Currency</Text>
-          <Picker
-            selectedValue={currency}
-            onValueChange={(itemValue) => handleCurrencyChange(itemValue)}
-            style={styles.picker}
-            itemStyle={styles.pickerItem}
+          <TouchableOpacity
+            style={styles.currencyButton}
+            onPress={() => setShowCurrencyModal(true)}
           >
-            {currencies.map((cur) => (
-              <Picker.Item key={cur} label={cur} value={cur} />
-            ))}
-          </Picker>
+            <Text style={styles.currencyButtonText}>{currency}</Text>
+            <Ionicons name="chevron-forward" size={20} color={isDarkMode ? '#fff' : '#333'} />
+          </TouchableOpacity>
         </View>
 
         {/* Dark Mode Section */}
@@ -280,16 +330,22 @@ const SettingsScreen = () => {
           <Text style={styles.sectionTitle}>Account</Text>
           <TouchableOpacity
             style={[styles.button, styles.dangerButton]}
-            onPress={handleDeactivateAccount}
+            onPress={handleDeactivateConfirm}
           >
             <Text style={styles.buttonText}>Deactivate Account</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, styles.deleteButton]}
+            onPress={() => setShowDeactivateModal(true)}
+          >
+            <Text style={styles.buttonText}>Delete Account</Text>
           </TouchableOpacity>
         </View>
 
         {/* Logout Button */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Logout</Text>
-          <TouchableOpacity style={styles.button} onPress={handleLogout}>
+          <TouchableOpacity style={styles.button} onPress={() => setShowLogoutModal(true)}>
             <Text style={styles.buttonText}>Logout</Text>
           </TouchableOpacity>
         </View>
@@ -300,12 +356,15 @@ const SettingsScreen = () => {
           transparent={true}
           onRequestClose={() => setShowPasswordModal(false)}
         >
-          <View style={styles.modalContainer}>
+          <KeyboardAvoidingView
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
             <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Change Password</Text>
               <View style={styles.inputContainer}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { paddingRight: 150 }]}
                   placeholder="Current Password"
                   secureTextEntry={!showOldPassword}
                   value={oldPassword}
@@ -339,38 +398,132 @@ const SettingsScreen = () => {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         {/* Deactivate Account Modal */}
+        <Modal
+          visible={showDeactivateConfirmModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowDeactivateConfirmModal(false)}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Ionicons name="warning" size={30} color="#ff6b6b" />
+                <Text style={styles.modalTitle}>Deactivate Account</Text>
+              </View>
+
+              <View style={styles.warningContainer}>
+                <Text style={styles.warningText}>
+                  Your account will be deactivated but all your data will be preserved. You can reactivate your account later by logging in.
+                </Text>
+              </View>
+
+              <View style={styles.confirmationSection}>
+                <Text style={styles.confirmationLabel}>
+                  Type "DEACTIVATE" to confirm:
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.confirmationInput,
+                    deactivateConfirmText.toUpperCase() === 'DEACTIVATE' ? styles.inputValid : styles.inputInvalid
+                  ]}
+                  value={deactivateConfirmText}
+                  onChangeText={setDeactivateConfirmText}
+                  placeholder="Type DEACTIVATE here"
+                  placeholderTextColor={isDarkMode ? '#aaa' : '#666'}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="default"
+                  returnKeyType="done"
+                />
+                {deactivateConfirmText.toUpperCase() === 'DEACTIVATE' && (
+                  <Ionicons name="checkmark-circle" size={24} color="#4CAF50" style={styles.checkIcon} />
+                )}
+              </View>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.button, styles.modalButton, styles.cancelButton]}
+                  onPress={() => {
+                    setShowDeactivateConfirmModal(false);
+                    setDeactivateConfirmText('');
+                  }}
+                  disabled={isDeactivating}
+                >
+                  <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.button,
+                    styles.modalButton,
+                    styles.dangerButton,
+                    deactivateConfirmText.toUpperCase() === 'DEACTIVATE' ? styles.dangerButtonEnabled : styles.dangerButtonDisabled
+                  ]}
+                  onPress={confirmDeactivateConfirm}
+                  disabled={isDeactivating || deactivateConfirmText.toUpperCase() !== 'DEACTIVATE'}
+                >
+                  <Text style={styles.buttonText}>
+                    {isDeactivating ? 'Deactivating...' : 'Deactivate Account'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Delete Account Modal */}
         <Modal
           visible={showDeactivateModal}
           animationType="slide"
           transparent={true}
           onRequestClose={() => setShowDeactivateModal(false)}
         >
-          <View style={styles.modalContainer}>
+          <KeyboardAvoidingView
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Deactivate Account</Text>
+              <View style={styles.modalHeader}>
+                <Ionicons name="warning" size={30} color="#ff6b6b" />
+                <Text style={styles.modalTitle}>Delete Account</Text>
+              </View>
 
-              <Text style={styles.warningText}>
-                ⚠️ This action cannot be undone. All your data including expenses, budgets, savings goals, and wishlist items will be permanently deleted.
-              </Text>
+              <View style={styles.warningContainer}>
+                <Text style={styles.warningText}>
+                  This action cannot be undone. All your data including expenses, budgets, savings goals, and wishlist items will be permanently deleted.
+                </Text>
+              </View>
 
-              <Text style={styles.confirmationLabel}>
-                Type "DELETE" to confirm:
-              </Text>
-              <TextInput
-                style={styles.input}
-                value={deactivateConfirmation}
-                onChangeText={setDeactivateConfirmation}
-                placeholder="Type DELETE here"
-                placeholderTextColor={isDarkMode ? '#aaa' : '#666'}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="default"
-                returnKeyType="done"
-              />
+              <View style={styles.confirmationSection}>
+                <Text style={styles.confirmationLabel}>
+                  Type "DELETE" to confirm:
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.confirmationInput,
+                    deactivateConfirmation.toUpperCase() === 'DELETE' ? styles.inputValid : styles.inputInvalid
+                  ]}
+                  value={deactivateConfirmation}
+                  onChangeText={setDeactivateConfirmation}
+                  placeholder="Type DELETE here"
+                  placeholderTextColor={isDarkMode ? '#aaa' : '#666'}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="default"
+                  returnKeyType="done"
+                />
+                {deactivateConfirmation.toUpperCase() === 'DELETE' && (
+                  <Ionicons name="checkmark-circle" size={24} color="#4CAF50" style={styles.checkIcon} />
+                )}
+              </View>
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity
@@ -384,7 +537,12 @@ const SettingsScreen = () => {
                   <Text style={styles.buttonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.button, styles.modalButton, styles.deleteButton]}
+                  style={[
+                    styles.button,
+                  styles.modalButton,
+                    styles.deleteButton,
+                    deactivateConfirmation.toUpperCase() === 'DELETE' ? styles.deleteButtonEnabled : styles.deleteButtonDisabled
+                  ]}
                   onPress={confirmDeactivateAccount}
                   disabled={isDeleting || deactivateConfirmation.toUpperCase() !== 'DELETE'}
                 >
@@ -394,7 +552,108 @@ const SettingsScreen = () => {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Currency Modal */}
+        <Modal
+          visible={showCurrencyModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowCurrencyModal(false)}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Select Currency</Text>
+              <ScrollView style={styles.currencyList}>
+                {currencies.map((cur) => (
+                  <TouchableOpacity
+                    key={cur}
+                    style={[
+                      styles.currencyOption,
+                      currency === cur && styles.currencyOptionSelected
+                    ]}
+                    onPress={() => {
+                      handleCurrencyChange(cur);
+                      setShowCurrencyModal(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.currencyOptionText,
+                        currency === cur && styles.currencyOptionTextSelected
+                      ]}
+                    >
+                      {cur}
+                    </Text>
+                    {currency === cur && (
+                      <Ionicons name="checkmark" size={20} color="#800080" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.button, styles.modalButton, styles.cancelButton]}
+                  onPress={() => setShowCurrencyModal(false)}
+                >
+                  <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Logout Modal */}
+        <Modal
+          visible={showLogoutModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowLogoutModal(false)}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Ionicons name="warning" size={30} color="#ff6b6b" />
+                <Text style={styles.modalTitle}>Logout</Text>
+              </View>
+
+              <View style={styles.warningContainer}>
+                <Text style={styles.warningText}>
+                  Are you sure you want to logout?
+                </Text>
+              </View>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.button, styles.modalButton, styles.cancelButton]}
+                  onPress={() => setShowLogoutModal(false)}
+                >
+                  <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.modalButton]}
+                  onPress={async () => {
+                    try {
+                      await AsyncStorage.clear();
+                      await signOut(auth);
+                      router.replace('/login');
+                    } catch (error) {
+                      Alert.alert('Logout Error', error.message);
+                    }
+                  }}
+                >
+                  <Text style={styles.buttonText}>Logout</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
         </Modal>
 
       </ScrollView>
@@ -418,7 +677,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontSize: 24,
     marginBottom: 20,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#333',
+    color: isDarkMode ? '#fff' : '#003366',
     textAlign: 'center',
   },
   section: {
@@ -435,7 +694,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#333',
+    color: isDarkMode ? '#fff' : '#003366',
     marginBottom: 15,
   },
   input: {
@@ -445,7 +704,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     borderRadius: 10,
     marginBottom: 15,
     backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
-    color: isDarkMode ? '#fff' : '#333',
+    color: isDarkMode ? '#fff' : '#003366',
     fontSize: 16,
   },
   inputContainer: {
@@ -513,7 +772,7 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: isDarkMode ? '#fff' : '#333',
+    color: isDarkMode ? '#fff' : '#003366',
     marginBottom: 25,
     textAlign: 'center',
   },
@@ -531,6 +790,14 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   },
   dangerButton: {
     backgroundColor: '#800080',
+  },
+  dangerButtonEnabled: {
+    backgroundColor: '#800080',
+    shadowColor: '#800080',
+  },
+  dangerButtonDisabled: {
+    backgroundColor: '#cccccc',
+    shadowColor: '#cccccc',
   },
   buttonSelected: {
     backgroundColor: '#800080',
@@ -561,5 +828,83 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   },
   deleteButton: {
     backgroundColor: '#ff6b6b',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  warningContainer: {
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#FFF5F5',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#ff6b6b',
+  },
+  confirmationSection: {
+    marginBottom: 20,
+  },
+  confirmationInput: {
+    position: 'relative',
+  },
+  inputValid: {
+    borderColor: '#4CAF50',
+    borderWidth: 2,
+  },
+  inputInvalid: {
+    borderColor: isDarkMode ? '#555' : '#ddd',
+  },
+  checkIcon: {
+    position: 'absolute',
+    right: 15,
+    top: 15,
+  },
+  deleteButtonEnabled: {
+    backgroundColor: '#ff4444',
+    shadowColor: '#ff4444',
+  },
+  deleteButtonDisabled: {
+    backgroundColor: '#cccccc',
+    shadowColor: '#cccccc',
+  },
+  currencyButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
+    borderWidth: 1,
+    borderColor: isDarkMode ? '#555' : '#ddd',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  currencyButtonText: {
+    fontSize: 16,
+    color: isDarkMode ? '#fff' : '#003366',
+  },
+  currencyList: {
+    maxHeight: 200,
+    marginBottom: 20,
+  },
+  currencyOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: isDarkMode ? '#555' : '#eee',
+  },
+  currencyOptionSelected: {
+    backgroundColor: isDarkMode ? '#333' : '#f0f0f0',
+  },
+  currencyOptionText: {
+    fontSize: 16,
+    color: isDarkMode ? '#fff' : '#003366',
+  },
+  currencyOptionTextSelected: {
+    fontWeight: 'bold',
+    color: '#800080',
   },
 });

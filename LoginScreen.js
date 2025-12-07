@@ -1,7 +1,9 @@
 //LoginScreen
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import { get, ref, update } from 'firebase/database';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
@@ -19,7 +21,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import { auth } from '../../firebaseConfig'; // adjust path as needed
+import { auth, database } from '../../firebaseConfig'; // adjust path as needed
 
 const showAlert = (title, message) => {
     if (Platform.OS === 'web') {
@@ -91,7 +93,19 @@ const LoginScreen = () => {
       return;
     }
 
-    // ✅ Verified: allow login
+    // Check if account is deactivated
+    const userRef = ref(database, `users/${refreshedUser.uid}`);
+    const userSnapshot = await get(userRef);
+    const userData = userSnapshot.val();
+
+    if (userData?.deactivated) {
+      setLoading(false);
+      showAlert('Account Deactivated', 'Your account has been deactivated. Please reactivate your account to continue.');
+      await auth.signOut();
+      return;
+    }
+
+    // ✅ Verified and active: allow login
     console.log("Logged in:", refreshedUser.email);
     setLoading(false);
     router.replace('/home');
@@ -100,6 +114,17 @@ const LoginScreen = () => {
     setLoading(false);
     console.log('Login error:', error);
     let message = 'Invalid Credentials. Please check and try again.';
+    if (error.code === 'auth/user-not-found') {
+      message = 'No account found with this email address.';
+    } else if (error.code === 'auth/wrong-password') {
+      message = 'Incorrect password. Please try again.';
+    } else if (error.code === 'auth/invalid-email') {
+      message = 'Please enter a valid email address.';
+    } else if (error.code === 'auth/user-disabled') {
+      message = 'This account has been disabled.';
+    } else if (error.code === 'auth/too-many-requests') {
+      message = 'Too many failed login attempts. Please try again later.';
+    }
     showAlert('Login Failed', message);
   }
 };
@@ -137,6 +162,76 @@ const LoginScreen = () => {
         setLoading(false);
     }
 };
+
+    const handleReactivateAccount = async () => {
+        if (!email || !password) {
+            showAlert('Missing Information', 'Please enter both email and password to reactivate your account.');
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            // Sign in with email and password
+            await signInWithEmailAndPassword(auth, email, password);
+
+            // Refresh user
+            const currentUser = auth.currentUser;
+            await currentUser?.reload();
+            const refreshedUser = auth.currentUser;
+
+            if (!refreshedUser?.emailVerified) {
+                setLoading(false);
+                // Send verification email
+                try {
+                    await sendEmailVerification(refreshedUser);
+                    showAlert('Verification Email Sent', 'A verification link has been sent to your email. Please click the link to verify your email, then try reactivating again.');
+                } catch (error) {
+                    showAlert('Error', 'Failed to send verification email. Please try again.');
+                }
+                await auth.signOut();
+                return;
+            }
+
+            // Check if account is deactivated
+            const userRef = ref(database, `users/${refreshedUser.uid}`);
+            const userSnapshot = await get(userRef);
+            const userData = userSnapshot.val();
+
+            if (!userData?.deactivated) {
+                setLoading(false);
+                showAlert('Account Already Active', 'Your account is already active. You can log in normally.');
+                await auth.signOut();
+                return;
+            }
+
+            // Reactivate account
+            await update(userRef, { deactivated: false });
+
+            // Clear any stored data and proceed to home
+            await AsyncStorage.clear();
+            setLoading(false);
+            showAlert('Account Reactivated', 'Your account has been successfully reactivated.');
+            router.replace('/home');
+
+        } catch (error) {
+            setLoading(false);
+            console.log('Reactivation error:', error);
+            let message = 'Failed to reactivate account. Please try again.';
+            if (error.code === 'auth/user-not-found') {
+                message = 'No account found with this email address.';
+            } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+                message = 'Incorrect email or password. Please try again.';
+            } else if (error.code === 'auth/invalid-email') {
+                message = 'Please enter a valid email address.';
+            } else if (error.code === 'auth/user-disabled') {
+                message = 'This account has been disabled.';
+            } else if (error.code === 'auth/too-many-requests') {
+                message = 'Too many failed attempts. Please try again later.';
+            }
+            showAlert('Reactivation Failed', message);
+        }
+    };
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -198,6 +293,10 @@ const LoginScreen = () => {
 
                 <TouchableOpacity onPress={() => router.push('/signup')}>
                     <Text style={styles.link}>Don't have an account? Sign up</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={handleReactivateAccount}>
+                    <Text style={styles.link}>Reactivate Account</Text>
                 </TouchableOpacity>
 
                 {loading && <ActivityIndicator size="large" color="#003366" style={styles.loadingIndicator} />}
