@@ -4,7 +4,6 @@ import { onValue, push, ref, remove, update } from 'firebase/database';
 import { useEffect, useState } from 'react';
 import {
   Alert,
-  FlatList,
   Modal,
   SafeAreaView,
   ScrollView,
@@ -23,6 +22,7 @@ const SavingsGoalsScreen = () => {
   const user = auth.currentUser;
 
   const [savingsGoals, setSavingsGoals] = useState([]);
+  const [completedGoals, setCompletedGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -31,8 +31,9 @@ const SavingsGoalsScreen = () => {
   const [targetAmount, setTargetAmount] = useState('');
   const [timeframe, setTimeframe] = useState('months'); // weeks, months, years
   const [durationValue, setDurationValue] = useState('');
-  const [monthlySavingPercent, setMonthlySavingPercent] = useState(''); // Optional percentage from income (not implemented fully now)
+  const [monthlySavingPercent, setMonthlySavingPercent] = useState('');
   const [linkedWishId, setLinkedWishId] = useState(null);
+  const [selectedIncomeCategories, setSelectedIncomeCategories] = useState([]);
 
   const [wishlist, setWishlist] = useState([]);
 
@@ -41,10 +42,35 @@ const SavingsGoalsScreen = () => {
   const [currentGoal, setCurrentGoal] = useState(null);
   const [newSavedAmount, setNewSavedAmount] = useState('');
 
+  // Additional states for editing goal modal
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingGoal, setEditingGoal] = useState(null);
+  const [editGoalName, setEditGoalName] = useState('');
+  const [editTargetAmount, setEditTargetAmount] = useState('');
+  const [editTimeframe, setEditTimeframe] = useState('months');
+  const [editDurationValue, setEditDurationValue] = useState('');
+  const [editMonthlySavingPercent, setEditMonthlySavingPercent] = useState('');
+  const [editLinkedWishId, setEditLinkedWishId] = useState(null);
+  const [editSelectedIncomeCategories, setEditSelectedIncomeCategories] = useState([]);
+
+
+
   const openUpdateModal = (goal) => {
     setCurrentGoal(goal);
     setNewSavedAmount(goal.savedAmount ? String(convertFromPKR(goal.savedAmount)) : '');
     setUpdateModalVisible(true);
+  };
+
+  const openEditModal = (goal) => {
+    setEditingGoal(goal);
+    setEditGoalName(goal.goalName);
+    setEditTargetAmount(String(convertFromPKR(goal.targetAmount)));
+    setEditTimeframe(goal.timeframe);
+    setEditDurationValue(String(goal.durationValue));
+    setEditMonthlySavingPercent(String(goal.monthlySavingPercent || 0));
+    setEditLinkedWishId(goal.linkedWishId || null);
+    setEditSelectedIncomeCategories(goal.selectedIncomeCategories || []);
+    setEditModalVisible(true);
   };
 
   const handleSaveUpdatedAmount = async () => {
@@ -57,10 +83,20 @@ const SavingsGoalsScreen = () => {
       Alert.alert('Error', 'Please enter a valid non-negative number');
       return;
     }
+    const targetAmount = convertFromPKR(currentGoal.targetAmount);
+    if (parsedAmount > targetAmount) {
+      const remaining = targetAmount - (currentGoal.savedAmount ? convertFromPKR(currentGoal.savedAmount) : 0);
+      Alert.alert('Notice', `You only need ${formatAmount(remaining)} ${currency} more to reach your goal.`);
+      return;
+    }
     try {
       await update(ref(database, `users/${user.uid}/savingsGoals/${currentGoal.id}`), {
         savedAmount: convertToPKR(parsedAmount)
       });
+      // Check if goal is now completed
+      if (parsedAmount >= targetAmount) {
+        Alert.alert('Congratulations!', `🎉 You have reached your goal: ${currentGoal.goalName}! 🎉`);
+      }
       setUpdateModalVisible(false);
       setCurrentGoal(null);
       setNewSavedAmount('');
@@ -95,13 +131,19 @@ const SavingsGoalsScreen = () => {
           id: key,
           ...value
         }));
-        setSavingsGoals(loadedGoals);
+        const active = loadedGoals.filter(goal => (goal.savedAmount || 0) < goal.targetAmount);
+        const completed = loadedGoals.filter(goal => (goal.savedAmount || 0) >= goal.targetAmount);
+        setSavingsGoals(active);
+        setCompletedGoals(completed);
       } else {
         setSavingsGoals([]);
+        setCompletedGoals([]);
       }
       setLoading(false);
     });
   }, [user]);
+
+
 
   // Helper: calculate monthly savings needed based on target, timeframe
   const calculateMonthlySavings = (goal) => {
@@ -152,6 +194,8 @@ const SavingsGoalsScreen = () => {
         timeframe,
         durationValue: durationVal,
         savedAmount: 0,
+        monthlySavingPercent: parseInt(monthlySavingPercent) || 0,
+        selectedIncomeCategories: selectedIncomeCategories,
         linkedWishId,
         createdAt: new Date().toISOString()
       });
@@ -159,6 +203,7 @@ const SavingsGoalsScreen = () => {
       setGoalName('');
       setTargetAmount('');
       setDurationValue('');
+      setMonthlySavingPercent('');
       setTimeframe('months');
       setLinkedWishId(null);
       setModalVisible(false);
@@ -189,6 +234,51 @@ const SavingsGoalsScreen = () => {
     );
   };
 
+  // Edit savings goal
+  const handleEditGoal = async () => {
+    if (!editingGoal) return;
+    if (!editGoalName.trim() || !editTargetAmount || !editDurationValue) {
+      Alert.alert('Error', 'Please fill all required fields');
+      return;
+    }
+    const targetVal = parseFloat(editTargetAmount);
+    const durationVal = parseInt(editDurationValue);
+    if (isNaN(targetVal) || targetVal <= 0) {
+      Alert.alert('Error', 'Target amount must be a positive number');
+      return;
+    }
+    if (isNaN(durationVal) || durationVal <= 0) {
+      Alert.alert('Error', 'Duration must be a positive integer');
+      return;
+    }
+
+    try {
+      await update(ref(database, `users/${user.uid}/savingsGoals/${editingGoal.id}`), {
+        goalName: editGoalName.trim(),
+        targetAmount: convertToPKR(targetVal),
+        timeframe: editTimeframe,
+        durationValue: durationVal,
+        monthlySavingPercent: parseInt(editMonthlySavingPercent) || 0,
+        selectedIncomeCategories: editSelectedIncomeCategories,
+        linkedWishId: editLinkedWishId,
+      });
+      Alert.alert('Success', 'Savings goal updated');
+      setEditModalVisible(false);
+      setEditingGoal(null);
+      setEditGoalName('');
+      setEditTargetAmount('');
+      setEditDurationValue('');
+      setEditMonthlySavingPercent('');
+      setEditTimeframe('months');
+      setEditLinkedWishId(null);
+      setEditSelectedIncomeCategories([]);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update goal: ' + error.message);
+    }
+  };
+
+
+
   // Update savedAmount manually (for demo, this could link to actual saved income allocation)
   // For now, not implemented auto tracking, can be expanded later.
 
@@ -207,45 +297,82 @@ const SavingsGoalsScreen = () => {
 
       {loading ? (
         <Text style={styles.loadingText}>Loading...</Text>
-      ) : savingsGoals.length === 0 ? (
-        <Text style={styles.emptyText}>No savings goals yet. Tap + to add one.</Text>
       ) : (
-        <FlatList
-          data={savingsGoals}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 20 }}
-          renderItem={({ item }) => {
-            const monthlyNeeded = calculateMonthlySavings(item);
-            const progressPercent = calculateProgress(item);
-            const linkedWish = wishlist.find(w => w.id === item.linkedWishId);
+        <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+          {savingsGoals.length === 0 ? (
+            <Text style={styles.emptyText}>No active savings goals yet. Tap + to add one.</Text>
+          ) : (
+            <>
+              <Text style={styles.sectionTitle}>Active Goals</Text>
+              {savingsGoals.map((item) => {
+                const monthlyNeeded = calculateMonthlySavings(item);
+                const progressPercent = calculateProgress(item);
+                const linkedWish = wishlist.find(w => w.id === item.linkedWishId);
 
-            return (
-              <View style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>{item.goalName}</Text>
-                  <TouchableOpacity onPress={() => deleteGoal(item.id)} style={styles.deleteButton}>
-                    <MaterialCommunityIcons name="delete" size={22} color="red" />
-                  </TouchableOpacity>
-                </View>
-                {linkedWish && (
-                  <Text style={styles.linkedWishText}>Linked Wish: {linkedWish.name}</Text>
-                )}
-                <Text>Target Amount: {formatAmount(convertFromPKR(item.targetAmount))} {currency}</Text>
-                <Text>Timeframe: {item.durationValue} {item.timeframe}</Text>
-                <Text>Estimated Monthly Savings Needed: {formatAmount(monthlyNeeded)} {currency}</Text>
-                <View style={styles.progressBarBackground}>
-                  <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
-                </View>
-                <Text>Progress: {progressPercent.toFixed(1)}%</Text>
+                return (
+                  <View key={item.id} style={styles.card}>
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.cardTitle}>{item.goalName}</Text>
+                      <View style={styles.cardActions}>
+                        <TouchableOpacity onPress={() => openEditModal(item)} style={styles.editButton}>
+                          <MaterialCommunityIcons name="pencil" size={22} color="blue" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => deleteGoal(item.id)} style={styles.deleteButton}>
+                          <MaterialCommunityIcons name="delete" size={22} color="red" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    {linkedWish && (
+                      <Text style={styles.linkedWishText}>Linked Wish: {linkedWish.name}</Text>
+                    )}
+                    <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Target Amount:</Text> {formatAmount(convertFromPKR(item.targetAmount))} {currency}</Text>
+                    <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Timeframe:</Text> {item.durationValue} {item.timeframe}</Text>
+                    <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Estimated Monthly Savings Needed:</Text> {formatAmount(monthlyNeeded)} {currency}</Text>
+                    <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Percentage from Income:</Text> {item.monthlySavingPercent || 0}% {item.selectedIncomeCategories && item.selectedIncomeCategories.length > 0 ? `(${item.selectedIncomeCategories.join(', ')})` : ''}</Text>
+                    <View style={styles.progressBarBackground}>
+                      <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
+                    </View>
+                    <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Progress:</Text> {progressPercent.toFixed(1)}%</Text>
+                    <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Remaining Amount:</Text> {formatAmount(convertFromPKR(item.targetAmount - item.savedAmount))} {currency}</Text>
 
-                <TouchableOpacity style={styles.updateSavedAmountButton} onPress={() => openUpdateModal(item)}>
-                  <Text style={styles.updateSavedAmountText}>Update Saved Amount</Text>
-                </TouchableOpacity>
-              </View>
-            );
-          }}
-        />
+                    <TouchableOpacity style={styles.updateSavedAmountButton} onPress={() => openUpdateModal(item)}>
+                      <Text style={styles.updateSavedAmountText}>Update Saved Amount</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </>
+          )}
+
+          {completedGoals.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Completed Goals</Text>
+              {completedGoals.map((item) => {
+                const linkedWish = wishlist.find(w => w.id === item.linkedWishId);
+
+                return (
+                  <View key={item.id} style={[styles.card, styles.completedCard]}>
+                    <View style={styles.cardHeader}>
+                      <Text style={[styles.cardTitle, styles.completedTitle]}>{item.goalName}</Text>
+                      <TouchableOpacity onPress={() => deleteGoal(item.id)} style={styles.deleteButton}>
+                        <MaterialCommunityIcons name="delete" size={22} color="red" />
+                      </TouchableOpacity>
+                    </View>
+                    {linkedWish && (
+                      <Text style={styles.linkedWishText}>Linked Wish: {linkedWish.name}</Text>
+                    )}
+                    <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Target Amount:</Text> {formatAmount(convertFromPKR(item.targetAmount))} {currency}</Text>
+                    <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Saved Amount:</Text> {formatAmount(convertFromPKR(item.savedAmount))} {currency}</Text>
+                    <Text style={styles.completedText}>Goal Achieved!</Text>
+                  </View>
+                );
+              })}
+            </>
+          )}
+        </ScrollView>
       )}
+
+
 
       {/* Modal for updating saved amount */}
       <Modal visible={updateModalVisible} animationType="slide" transparent={true}>
@@ -350,6 +477,44 @@ const SavingsGoalsScreen = () => {
               </TouchableOpacity>
             </View>
             
+            <Text style={styles.label}>Percentage from Income (%)</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={monthlySavingPercent}
+              onChangeText={(text) => {
+                const numericValue = text.replace(/[^0-9]/g, '');
+                setMonthlySavingPercent(numericValue);
+              }}
+              placeholder="e.g. 10"
+              placeholderTextColor="#aaa"
+              autoCorrect={false}
+            />
+
+            <Text style={styles.label}>Apply to Income Categories</Text>
+            <View style={styles.categoryWrap}>
+              {['Salary', 'Bonus', 'Freelance', 'Business', 'Gift', 'Interest', 'Other'].map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[
+                    styles.catBox,
+                    selectedIncomeCategories.includes(cat) && styles.catBoxSelected,
+                  ]}
+                  onPress={() => {
+                    if (selectedIncomeCategories.includes(cat)) {
+                      setSelectedIncomeCategories(selectedIncomeCategories.filter(c => c !== cat));
+                    } else {
+                      setSelectedIncomeCategories([...selectedIncomeCategories, cat]);
+                    }
+                  }}
+                >
+                  <Text style={{ color: selectedIncomeCategories.includes(cat) ? '#fff' : themeColors.primary }}>
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             <Text style={styles.label}>Link to Wishlist Item (Optional)</Text>
             <ScrollView style={styles.wishlistSelector} nestedScrollEnabled={true}>
               {wishlist.length === 0 ? (
@@ -385,6 +550,150 @@ const SavingsGoalsScreen = () => {
               </TouchableOpacity>
             </View>
             
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Modal for editing goal */}
+      <Modal visible={editModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalContainer}>
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Savings Goal</Text>
+
+            <Text style={styles.label}>Goal Name *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Trip, Laptop, Emergency Fund"
+              value={editGoalName}
+              onChangeText={setEditGoalName}
+              placeholderTextColor="#aaa"
+              autoCorrect={false}
+            />
+
+            <Text style={styles.label}>Target Amount ({currency}) *</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={editTargetAmount}
+              onChangeText={(text) => {
+                const numericValue = text.replace(/[^0-9.]/g, '');
+                const parts = numericValue.split('.');
+                if (parts.length > 2) {
+                  setEditTargetAmount(parts[0] + '.' + parts.slice(1).join(''));
+                } else {
+                  setEditTargetAmount(numericValue);
+                }
+              }}
+              placeholderTextColor="#aaa"
+              autoCorrect={false}
+            />
+
+            <Text style={styles.label}>Duration *</Text>
+            <View style={styles.durationRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, marginRight: 10 }]}
+                keyboardType="numeric"
+                value={editDurationValue}
+                onChangeText={(text) => {
+                  const numericValue = text.replace(/[^0-9]/g, '');
+                  setEditDurationValue(numericValue);
+                }}
+                placeholderTextColor="#aaa"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                style={styles.durationOption}
+                onPress={() => setEditTimeframe('weeks')}
+              >
+                <Text style={editTimeframe === 'weeks' ? styles.durationSelected : styles.durationText}>Weeks</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.durationOption}
+                onPress={() => setEditTimeframe('months')}
+              >
+                <Text style={editTimeframe === 'months' ? styles.durationSelected : styles.durationText}>Months</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.durationOption}
+                onPress={() => setEditTimeframe('years')}
+              >
+                <Text style={editTimeframe === 'years' ? styles.durationSelected : styles.durationText}>Years</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>Percentage from Income (%)</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={editMonthlySavingPercent}
+              onChangeText={(text) => {
+                const numericValue = text.replace(/[^0-9]/g, '');
+                setEditMonthlySavingPercent(numericValue);
+              }}
+              placeholder="e.g. 10"
+              placeholderTextColor="#aaa"
+              autoCorrect={false}
+            />
+
+            <Text style={styles.label}>Apply to Income Categories</Text>
+            <View style={styles.categoryWrap}>
+              {['Salary', 'Bonus', 'Freelance', 'Business', 'Gift', 'Interest', 'Other'].map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[
+                    styles.catBox,
+                    editSelectedIncomeCategories.includes(cat) && styles.catBoxSelected,
+                  ]}
+                  onPress={() => {
+                    if (editSelectedIncomeCategories.includes(cat)) {
+                      setEditSelectedIncomeCategories(editSelectedIncomeCategories.filter(c => c !== cat));
+                    } else {
+                      setEditSelectedIncomeCategories([...editSelectedIncomeCategories, cat]);
+                    }
+                  }}
+                >
+                  <Text style={{ color: editSelectedIncomeCategories.includes(cat) ? '#fff' : themeColors.primary }}>
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.label}>Link to Wishlist Item (Optional)</Text>
+            <ScrollView style={styles.wishlistSelector} nestedScrollEnabled={true}>
+              {wishlist.length === 0 ? (
+                <Text style={styles.emptyText}>No wishlist items available.</Text>
+              ) : (
+                wishlist.map((wish) => (
+                  <TouchableOpacity
+                    key={wish.id}
+                    style={[
+                      styles.wishItem,
+                      editLinkedWishId === wish.id && styles.wishSelected
+                    ]}
+                    onPress={() => {
+                      if (editLinkedWishId === wish.id) {
+                        setEditLinkedWishId(null);
+                      } else {
+                        setEditLinkedWishId(wish.id);
+                      }
+                    }}
+                  >
+                    <Text style={styles.wishText}>{wish.name} - {formatAmount(convertFromPKR(wish.amount))} {currency}</Text>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.button} onPress={handleEditGoal}>
+                <Text style={styles.buttonText}>Update Goal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={() => setEditModalVisible(false)}>
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+
           </ScrollView>
         </View>
       </Modal>
@@ -477,6 +786,15 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     textShadowColor: 'rgba(128, 0, 128, 0.3)',
     textShadowOffset: { width: 0.5, height: 0.5 },
     textShadowRadius: 1,
+  },
+  cardActions: {
+    flexDirection: 'row',
+  },
+  editButton: {
+    padding: 6,
+    borderRadius: 4,
+    backgroundColor: isDarkMode ? '#2A4A4A' : '#e0f0ff',
+    marginRight: 8,
   },
   deleteButton: {
     padding: 6,
@@ -576,7 +894,8 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
   },
   modalContent: {
     backgroundColor: isDarkMode ? '#1E1E1E' : '#fff',
-    marginVertical: 80,
+    marginTop: 30,
+    marginBottom: 80,
     marginHorizontal: 20,
     borderRadius: 15,
     padding: 20,
@@ -639,4 +958,49 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     fontSize: 14,
     fontFamily: 'serif',
   },
+  categoryWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+  },
+  catBox: {
+    borderWidth: 1,
+    borderColor: themeColors.primary,
+    padding: 8,
+    margin: 4,
+    borderRadius: 8,
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#fff',
+  },
+  catBoxSelected: {
+    backgroundColor: themeColors.primary,
+    borderColor: themeColors.primary,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: themeColors.primary,
+    fontFamily: 'serif',
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 10,
+    textShadowColor: 'rgba(128, 0, 128, 0.3)',
+    textShadowOffset: { width: 0.5, height: 0.5 },
+    textShadowRadius: 1,
+  },
+  completedCard: {
+    backgroundColor: isDarkMode ? '#1A4A1A' : '#E8F5E8',
+    borderColor: '#4CAF50',
+  },
+  completedTitle: {
+    color: '#4CAF50',
+  },
+  completedText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    fontFamily: 'serif',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+
 });

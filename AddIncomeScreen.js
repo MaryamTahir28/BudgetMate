@@ -3,7 +3,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { push, ref, update } from 'firebase/database';
+import { get, push, ref, update } from 'firebase/database';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StatusBar,
@@ -23,7 +23,7 @@ const initialCategories = [
 const AddIncomeScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { isDarkMode, themeColors } = useAppContext();
+  const { isDarkMode, themeColors, convertToPKR } = useAppContext();
 
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -78,6 +78,27 @@ const AddIncomeScreen = () => {
         incomeData.id = Date.now().toString();
         await push(ref(database, `users/${userId}/incomes`), incomeData);
         Alert.alert('Success', 'Income saved.');
+      }
+
+      // Allocate to savings goals if category is Salary
+      if (incomeData.category === 'Salary') {
+        const savingsRef = ref(database, `users/${userId}/savingsGoals`);
+        const snapshot = await get(savingsRef);
+        if (snapshot.exists()) {
+          const goals = snapshot.val();
+          const goalKeys = Object.keys(goals);
+          for (const key of goalKeys) {
+            const goal = goals[key];
+            if (goal.monthlySavingPercent && goal.monthlySavingPercent > 0) {
+              const allocation = (amountValue * goal.monthlySavingPercent) / 100;
+              const allocationPKR = convertToPKR(allocation);
+              const currentSaved = goal.savedAmount || 0;
+              await update(ref(database, `users/${userId}/savingsGoals/${key}`), {
+                savedAmount: currentSaved + allocationPKR
+              });
+            }
+          }
+        }
       }
 
       router.replace({ pathname: '/home', params: { type: 'income' } });

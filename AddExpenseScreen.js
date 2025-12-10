@@ -6,7 +6,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { get, push, ref, update } from "firebase/database";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert, Keyboard, KeyboardAvoidingView, Platform,
+  Alert, Keyboard, KeyboardAvoidingView,
+  Modal,
+  Platform,
   StatusBar,
   StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View
 } from 'react-native';
@@ -35,6 +37,8 @@ const AddExpenseScreen = () => {
   const [customCategory, setCustomCategory] = useState('');
   const [useCustomCategory, setUseCustomCategory] = useState(false);
   const [categories, setCategories] = useState(initialCategories);
+  const [showIncomeExceededModal, setShowIncomeExceededModal] = useState(false);
+  const [incomeExceededData, setIncomeExceededData] = useState({});
 
   useEffect(() => {
     if (params?.firebaseKey && !hasPrefilled.current) {
@@ -57,6 +61,67 @@ const AddExpenseScreen = () => {
       Alert.alert('Invalid Amount', 'Please enter a valid positive number.');
       setAmount('');
       return;
+    }
+
+    const userId = auth.currentUser?.uid || 'guest';
+
+    // Get current month and year
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const currentMonthPrefix = `${currentYear}-${currentMonth}`;
+
+    // Fetch total income for current month
+    const incomeRef = ref(database, `users/${userId}/incomes`);
+    const incomeSnapshot = await get(incomeRef);
+    let totalIncome = 0;
+    if (incomeSnapshot.exists()) {
+      const incomes = incomeSnapshot.val();
+      for (const key in incomes) {
+        const incomeDate = incomes[key].date || '';
+        if (incomeDate.startsWith(currentMonthPrefix)) {
+          totalIncome += parseFloat(incomes[key].amount || 0);
+        }
+      }
+    }
+
+    // Fetch total expenses for current month
+    const expensesRef = ref(database, `users/${userId}/expenses`);
+    const expensesSnapshot = await get(expensesRef);
+    let totalExpenses = 0;
+    if (expensesSnapshot.exists()) {
+      const expenses = expensesSnapshot.val();
+      for (const key in expenses) {
+        const expenseDate = expenses[key].date || '';
+        if (expenseDate.startsWith(currentMonthPrefix)) {
+          totalExpenses += parseFloat(expenses[key].amount || 0);
+        }
+      }
+    }
+
+    // If editing, subtract the old amount from totalExpenses
+    if (params?.firebaseKey) {
+      const oldExpenseRef = ref(database, `users/${userId}/expenses/${params.firebaseKey}`);
+      const oldExpenseSnapshot = await get(oldExpenseRef);
+      if (oldExpenseSnapshot.exists()) {
+        const oldAmount = parseFloat(oldExpenseSnapshot.val().amount || 0);
+        totalExpenses -= oldAmount;
+      }
+    }
+
+    // Check if adding this expense exceeds total income
+    if (totalExpenses + amountValue > totalIncome) {
+      const shouldProceed = await new Promise((resolve) => {
+        setIncomeExceededData({
+          totalIncome,
+          totalExpenses,
+          newExpense: amountValue,
+          onProceed: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+        setShowIncomeExceededModal(true);
+      });
+      if (!shouldProceed) return;
     }
 
     const expenseData = {
@@ -342,6 +407,59 @@ const AddExpenseScreen = () => {
           </View>
         </KeyboardAvoidingView>
       </TouchableWithoutFeedback>
+
+      <Modal
+        visible={showIncomeExceededModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowIncomeExceededModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Income Exceeded</Text>
+            <Text style={styles.modalText}>
+              Adding this expense will exceed your total income.
+            </Text>
+            <View style={styles.modalDetails}>
+              <Text style={styles.modalDetailText}>
+                Total Income: {formatAmount(incomeExceededData.totalIncome || 0)}
+              </Text>
+              <Text style={styles.modalDetailText}>
+                Current Expenses: {formatAmount(incomeExceededData.totalExpenses || 0)}
+              </Text>
+              <Text style={styles.modalDetailText}>
+                New Expense: {formatAmount(incomeExceededData.newExpense || 0)}
+              </Text>
+              <Text style={styles.modalDetailText}>
+                Total After Addition: {formatAmount((incomeExceededData.totalExpenses || 0) + (incomeExceededData.newExpense || 0))}
+              </Text>
+            </View>
+            <Text style={styles.modalWarning}>
+              Do you want to proceed?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => {
+                  setShowIncomeExceededModal(false);
+                  incomeExceededData.onCancel && incomeExceededData.onCancel();
+                }}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalProceedButton}
+                onPress={() => {
+                  setShowIncomeExceededModal(false);
+                  incomeExceededData.onProceed && incomeExceededData.onProceed();
+                }}
+              >
+                <Text style={styles.modalProceedText}>Proceed</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -434,9 +552,87 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     borderRadius: 8,
     alignSelf: 'center',
   },
-  cancelText: { 
-    color: 'white', 
-    fontSize: 18, 
-    fontFamily: 'serif' 
+  cancelText: {
+    color: 'white',
+    fontSize: 18,
+    fontFamily: 'serif'
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: isDarkMode ? '#1E1E1E' : '#fff',
+    borderRadius: 10,
+    padding: 20,
+    width: '80%',
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: isDarkMode ? '#fff' : themeColors.primary,
+    fontFamily: 'serif',
+    marginBottom: 10,
+  },
+  modalText: {
+    fontSize: 16,
+    color: isDarkMode ? '#ccc' : '#666',
+    textAlign: 'center',
+    marginBottom: 15,
+    fontFamily: 'serif',
+  },
+  modalDetails: {
+    width: '100%',
+    marginBottom: 15,
+  },
+  modalDetailText: {
+    fontSize: 14,
+    color: isDarkMode ? '#fff' : '#333',
+    marginBottom: 5,
+    fontFamily: 'serif',
+  },
+  modalWarning: {
+    fontSize: 16,
+    color: '#ff6b6b',
+    textAlign: 'center',
+    marginBottom: 20,
+    fontFamily: 'serif',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
+  modalCancelButton: {
+    backgroundColor: themeColors.secondary,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 5,
+    flex: 1,
+    marginRight: 10,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    color: 'white',
+    fontSize: 16,
+    fontFamily: 'serif',
+  },
+  modalProceedButton: {
+    backgroundColor: themeColors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 5,
+    flex: 1,
+    marginLeft: 10,
+    alignItems: 'center',
+  },
+  modalProceedText: {
+    color: 'white',
+    fontSize: 16,
+    fontFamily: 'serif',
   },
 });

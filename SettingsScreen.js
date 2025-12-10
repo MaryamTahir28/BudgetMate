@@ -12,8 +12,8 @@ import {
   signOut,
   updateProfile
 } from 'firebase/auth';
-import { ref, remove, update } from 'firebase/database';
-import { useState } from 'react';
+import { get, limitToLast, onValue, query, ref, remove, update } from 'firebase/database';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -136,6 +136,45 @@ const SettingsScreen = () => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
   const [showThemeModal, setShowThemeModal] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState(theme);
+  const [showActivityLogsModal, setShowActivityLogsModal] = useState(false);
+  const [activityLogs, setActivityLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
+  // State for savings goals
+  const [savingsGoals, setSavingsGoals] = useState([]);
+
+
+
+  // Update selectedTheme when theme changes or modal opens
+  useEffect(() => {
+    setSelectedTheme(theme);
+  }, [theme, showThemeModal]);
+
+  // Load savings goals
+  useEffect(() => {
+    if (!user) return;
+    const savingsRef = ref(database, `users/${user.uid}/savingsGoals`);
+    const unsubscribe = onValue(savingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const loadedGoals = Object.entries(data).map(([key, value]) => ({
+          id: key,
+          ...value
+        }));
+        setSavingsGoals(loadedGoals);
+      } else {
+        setSavingsGoals([]);
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+
+
+
+
+
 
   const handleDeactivateAccount = () => {
     Alert.alert(
@@ -245,6 +284,37 @@ const SettingsScreen = () => {
     Alert.alert('Success', 'Theme updated successfully');
   };
 
+  const fetchActivityLogs = async () => {
+    if (!user) return;
+
+    setLoadingLogs(true);
+    try {
+      const logsRef = ref(database, `users/${user.uid}/activityLogs`);
+      const logsQuery = query(logsRef, limitToLast(50));
+      const snapshot = await get(logsQuery);
+
+      if (snapshot.exists()) {
+        const logsData = snapshot.val();
+        const logsArray = Object.values(logsData).sort((a, b) => b.timestamp - a.timestamp);
+        setActivityLogs(logsArray);
+      } else {
+        setActivityLogs([]);
+      }
+    } catch (error) {
+      console.error('Error fetching activity logs:', error);
+      Alert.alert('Error', 'Failed to load activity logs');
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  const handleViewActivityLogs = () => {
+    setShowActivityLogsModal(true);
+    fetchActivityLogs();
+  };
+
+
+
   const styles = getStyles(isDarkMode, themeColors);
 
   return (
@@ -285,6 +355,17 @@ const SettingsScreen = () => {
             onPress={() => setShowPasswordModal(true)}
           >
             <Text style={styles.buttonText}>Change Password</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Activity Logs Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Activity Logs</Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleViewActivityLogs}
+          >
+            <Text style={styles.buttonText}>View Login History</Text>
           </TouchableOpacity>
         </View>
 
@@ -344,7 +425,11 @@ const SettingsScreen = () => {
           >
             <Text style={styles.buttonText}>Manage Savings Goals</Text>
           </TouchableOpacity>
+
+
         </View>
+
+
 
         {/* Account Section */}
         <View style={styles.section}>
@@ -650,12 +735,9 @@ const SettingsScreen = () => {
                       key={thm}
                       style={[
                         styles.currencyOption,
-                        theme === thm && styles.currencyOptionSelected
+                        selectedTheme === thm && styles.currencyOptionSelected
                       ]}
-                      onPress={() => {
-                        handleThemeChange(thm);
-                        setShowThemeModal(false);
-                      }}
+                      onPress={() => setSelectedTheme(thm)}
                     >
                       <View style={styles.themeOptionContent}>
                         <View style={styles.colorSwatches}>
@@ -665,13 +747,13 @@ const SettingsScreen = () => {
                         <Text
                           style={[
                             styles.currencyOptionText,
-                            theme === thm && styles.currencyOptionTextSelected
+                            selectedTheme === thm && styles.currencyOptionTextSelected
                           ]}
                         >
                           {thm}
                         </Text>
                       </View>
-                      {theme === thm && (
+                      {selectedTheme === thm && (
                         <Ionicons name="checkmark" size={20} color={localThemeColors.primary} />
                       )}
                     </TouchableOpacity>
@@ -684,6 +766,15 @@ const SettingsScreen = () => {
                   onPress={() => setShowThemeModal(false)}
                 >
                   <Text style={styles.buttonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.modalButton]}
+                  onPress={() => {
+                    handleThemeChange(selectedTheme);
+                    setShowThemeModal(false);
+                  }}
+                >
+                  <Text style={styles.buttonText}>Apply</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -739,6 +830,61 @@ const SettingsScreen = () => {
           </KeyboardAvoidingView>
         </Modal>
 
+        {/* Activity Logs Modal */}
+        <Modal
+          visible={showActivityLogsModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowActivityLogsModal(false)}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Login History</Text>
+              {loadingLogs ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.loadingText}>Loading activity logs...</Text>
+                </View>
+              ) : activityLogs.length === 0 ? (
+                <View style={styles.noLogsContainer}>
+                  <Text style={styles.noLogsText}>No login activity found.</Text>
+                </View>
+              ) : (
+                <ScrollView style={styles.logsList}>
+                  {activityLogs.map((log, index) => (
+                    <View key={index} style={styles.logItem}>
+                      <Text style={styles.logText}>
+                        <Text style={styles.logLabel}>Action:</Text> {log.action}
+                      </Text>
+                      <Text style={styles.logText}>
+                        <Text style={styles.logLabel}>Date:</Text> {new Date(log.timestamp).toLocaleString()}
+                      </Text>
+                      <Text style={styles.logText}>
+                        <Text style={styles.logLabel}>Platform:</Text> {log.platform}
+                      </Text>
+                      <Text style={styles.logText}>
+                        <Text style={styles.logLabel}>Email:</Text> {log.email}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.button, styles.modalButton, styles.cancelButton]}
+                  onPress={() => setShowActivityLogsModal(false)}
+                >
+                  <Text style={styles.buttonText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -779,6 +925,13 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     fontWeight: 'bold',
     color: isDarkMode ? '#fff' : themeColors.secondary,
     marginBottom: 15,
+  },
+  subSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: isDarkMode ? '#fff' : themeColors.secondary,
+    marginBottom: 10,
+    marginTop: 10,
   },
   input: {
     borderWidth: 1,
@@ -869,7 +1022,7 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     marginHorizontal: 8,
   },
   cancelButton: {
-    backgroundColor: '#8E8E93',
+    backgroundColor: themeColors.secondary,
   },
   dangerButton: {
     backgroundColor: themeColors.primary,
@@ -1006,5 +1159,50 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     marginRight: 5,
     borderWidth: 1,
     borderColor: isDarkMode ? '#555' : '#ddd',
+  },
+  logsList: {
+    maxHeight: 300,
+    marginBottom: 20,
+  },
+  logItem: {
+    backgroundColor: isDarkMode ? '#2A2A2A' : '#f8f9fa',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: isDarkMode ? '#444' : '#e9ecef',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  logText: {
+    fontSize: 14,
+    color: isDarkMode ? '#fff' : themeColors.secondary,
+    marginBottom: 5,
+    lineHeight: 20,
+  },
+  logLabel: {
+    fontWeight: 'bold',
+    color: themeColors.primary,
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: isDarkMode ? '#aaa' : '#666',
+    fontStyle: 'italic',
+  },
+  noLogsContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  noLogsText: {
+    fontSize: 16,
+    color: isDarkMode ? '#aaa' : '#666',
+    fontStyle: 'italic',
   },
 });

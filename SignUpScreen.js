@@ -135,6 +135,7 @@ const SignupScreen = ({ themeColors }) => {
                         keyboardType="email-address"
                         autoCapitalize="none"
                         color={themeColors.secondary}
+                        selectionColor={themeColors.secondary}
                     />
                     <Icon name="envelope" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                 </View>
@@ -149,6 +150,7 @@ const SignupScreen = ({ themeColors }) => {
                         secureTextEntry={!passwordVisible}
                         autoCapitalize="none"
                         color={themeColors.secondary}
+                        selectionColor={themeColors.secondary}
                     />
                     <TouchableOpacity
                         style={styles.eyeIcon}
@@ -169,6 +171,7 @@ const SignupScreen = ({ themeColors }) => {
                         secureTextEntry={!confirmPasswordVisible}
                         autoCapitalize="none"
                         color={themeColors.secondary}
+                        selectionColor={themeColors.secondary}
                     />
                     <TouchableOpacity
                         style={styles.eyeIcon}

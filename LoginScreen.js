@@ -1,13 +1,14 @@
 //LoginScreen
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
-import { get, ref, update } from 'firebase/database';
-import React, { useState } from 'react';
+import { get, push, ref, update } from 'firebase/database';
+import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    BackHandler,
     Image,
     KeyboardAvoidingView,
     Platform,
@@ -17,20 +18,13 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { useAppContext } from '../../AppContext';
 import { auth, database } from '../../firebaseConfig'; // adjust path as needed
 
-const showAlert = (title, message) => {
-    if (Platform.OS === 'web') {
-        window.alert(`${title}\n\n${message}`);
-    } else {
-        Alert.alert(title, message);
-    }
-};
 const LoginScreen = () => {
     const router = useRouter();
     const { themeColors } = useAppContext();
@@ -38,10 +32,49 @@ const LoginScreen = () => {
     const [password, setPassword] = useState('');
     const [passwordVisible, setPasswordVisible] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [loginBlocked, setLoginBlocked] = useState(false);
+    const [blockTimer, setBlockTimer] = useState(0);
+    const [failedAttempts, setFailedAttempts] = useState(0);
+    const showAlert = (title, message) => {
+        Alert.alert(title, message);
+    };
+
+    useEffect(() => {
+        if (loginBlocked) {
+            const interval = setInterval(() => {
+                setBlockTimer((prev) => {
+                    if (prev <= 1) {
+                        setLoginBlocked(false);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+            return () => clearInterval(interval);
+        }
+    }, [loginBlocked]);
 
     const styles = getStyles(themeColors);
 
+    useFocusEffect(() => {
+        const backAction = () => {
+            // Prevent back navigation on login screen
+            return true;
+        };
+
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+        return () => {
+            backHandler.remove();
+        };
+    });
+
     const handleLogin = async () => {
+  if (loginBlocked) {
+    showAlert('Login Blocked', `Please wait ${blockTimer} seconds before trying again.`);
+    return;
+  }
+
   if (!email || !password) {
     showAlert('Missing Information', 'Please enter both email and password to continue.');
     return;
@@ -50,57 +83,22 @@ const LoginScreen = () => {
   setLoading(true);
 
   try {
+    console.log("Attempting to sign in with email:", email);
     // 🔐 Sign in
     await signInWithEmailAndPassword(auth, email, password);
+    console.log("Sign in successful");
 
     // ✅ Refresh user from Firebase
     const currentUser = auth.currentUser;
     await currentUser?.reload(); // reload from server
     const refreshedUser = auth.currentUser; // re-fetch after reload
-
-    if (!refreshedUser?.emailVerified) {
-      setLoading(false);
-
-      // 🔁 Handle unverified email (mobile vs web)
-      if (Platform.OS === 'web') {
-        const resend = confirm('Your email is not verified.\n\nDo you want to resend the verification email?');
-        if (resend) {
-          try {
-            await sendEmailVerification(refreshedUser);
-            window.alert('Verification Sent\n\nA verification link has been sent to your email.');
-          } catch (err) {
-            window.alert('Failed to Send Email\n\n' + err.message);
-          }
-        }
-      } else {
-        Alert.alert(
-          'Email Not Verified',
-          'Please verify your email before logging in.',
-          [
-            {
-              text: 'Resend Email',
-              onPress: async () => {
-                try {
-                  await sendEmailVerification(refreshedUser);
-                  showAlert('Verification Sent', 'Check your inbox for the verification link.');
-                } catch (err) {
-                  showAlert('Failed to Send Email', err.message);
-                }
-              },
-            },
-            { text: 'Cancel', style: 'cancel' }
-          ]
-        );
-      }
-
-      await auth.signOut();
-      return;
-    }
+    console.log("User refreshed:", refreshedUser?.email);
 
     // Check if account is deactivated
     const userRef = ref(database, `users/${refreshedUser.uid}`);
     const userSnapshot = await get(userRef);
     const userData = userSnapshot.val();
+    console.log("User data:", userData);
 
     if (userData?.deactivated) {
       setLoading(false);
@@ -111,25 +109,65 @@ const LoginScreen = () => {
 
     // ✅ Verified and active: allow login
     console.log("Logged in:", refreshedUser.email);
+
+    // Reset failed attempts on successful login
+    setFailedAttempts(0);
+
+    // Log login activity
+    try {
+      const activityRef = ref(database, `users/${refreshedUser.uid}/activityLogs`);
+      const newActivityRef = push(activityRef);
+      await update(newActivityRef, {
+        action: 'login',
+        timestamp: new Date().toISOString(),
+        platform: Platform.OS,
+        email: refreshedUser.email,
+      });
+      console.log("Login activity logged");
+    } catch (logError) {
+      console.error('Failed to log login activity:', logError);
+    }
+
     setLoading(false);
+    console.log("Navigating to home");
     router.replace('/home');
 
   } catch (error) {
     setLoading(false);
     console.log('Login error:', error);
-    let message = 'Invalid Credentials. Please check and try again.';
+    let shouldIncrement = false;
+    let errorMessage = 'Invalid Credentials. Please check and try again.';
     if (error.code === 'auth/user-not-found') {
-      message = 'No account found with this email address.';
+      shouldIncrement = true;
+      errorMessage = 'No account found with this email address.';
     } else if (error.code === 'auth/wrong-password') {
-      message = 'Incorrect password. Please try again.';
+      shouldIncrement = true;
+      errorMessage = 'Incorrect password. Please try again.';
     } else if (error.code === 'auth/invalid-email') {
-      message = 'Please enter a valid email address.';
+      shouldIncrement = true;
+      errorMessage = 'Please enter a valid email address.';
     } else if (error.code === 'auth/user-disabled') {
-      message = 'This account has been disabled.';
+      errorMessage = 'This account has been disabled.';
     } else if (error.code === 'auth/too-many-requests') {
-      message = 'Too many failed login attempts. Please try again later.';
+      shouldIncrement = true;
+      errorMessage = 'Too many failed login attempts.';
     }
-    showAlert('Login Failed', message);
+
+    if (shouldIncrement) {
+      const newFailedAttempts = failedAttempts + 1;
+      setFailedAttempts(newFailedAttempts);
+      console.log('Failed attempts:', newFailedAttempts);
+      if (newFailedAttempts >= 3) {
+        console.log('Blocking login for 15 seconds');
+        showAlert('Too Many Failed Attempts', 'You have exceeded the maximum number of login attempts. Login is blocked for 15 seconds.');
+        setLoginBlocked(true);
+        setBlockTimer(15);
+        setFailedAttempts(0);
+        return; // Do not show the "Login Failed" alert when blocking
+      }
+    }
+
+    showAlert('Login Failed', errorMessage);
   }
 };
 
@@ -237,6 +275,8 @@ const LoginScreen = () => {
         }
     };
 
+
+
     return (
         <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.scrollContainer}>
@@ -256,13 +296,15 @@ const LoginScreen = () => {
                 <View style={styles.inputContainer}>
                     <TextInput
                         style={styles.input}
-                        placeholder="Enter Email"
+                        placeholder={loginBlocked ? "Login blocked, please wait..." : "Enter Email"}
                         placeholderTextColor={themeColors.secondary}
                         value={email}
                         onChangeText={setEmail}
                         keyboardType="email-address"
                         autoCapitalize="none"
                         color={themeColors.secondary}
+                        selectionColor={themeColors.secondary}
+                        editable={!loginBlocked}
                     />
                     <Icon name="envelope" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                 </View>
@@ -270,25 +312,28 @@ const LoginScreen = () => {
                 <View style={styles.inputContainer}>
                     <TextInput
                         style={styles.input}
-                        placeholder="Enter Password"
+                        placeholder={loginBlocked ? "Login blocked, please wait..." : "Enter Password"}
                         placeholderTextColor={themeColors.secondary}
                         value={password}
                         onChangeText={setPassword}
                         secureTextEntry={!passwordVisible}
                         autoCapitalize="none"
                         color={themeColors.secondary}
+                        selectionColor={themeColors.secondary}
+                        editable={!loginBlocked}
                     />
                     <TouchableOpacity
                         style={styles.eyeIcon}
                         onPress={() => setPasswordVisible(!passwordVisible)}
+                        disabled={loginBlocked}
                     >
                         <Icon name={passwordVisible ? 'eye' : 'eye-slash'} size={20} color={themeColors.secondary} />
                     </TouchableOpacity>
                     <Icon name="lock" size={20} color={themeColors.secondary} style={styles.iconInsideInput} />
                 </View>
 
-                <TouchableOpacity style={styles.buttonContainer} onPress={handleLogin}>
-                    <Text style={styles.buttonText}>Login</Text>
+                <TouchableOpacity style={[styles.buttonContainer, loginBlocked && styles.disabledButton]} onPress={handleLogin} disabled={loginBlocked}>
+                    <Text style={styles.buttonText}>{loginBlocked ? `Wait ${blockTimer}s` : 'Login'}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity  onPress={handleForgotPassword}>
@@ -302,6 +347,8 @@ const LoginScreen = () => {
                 <TouchableOpacity onPress={handleReactivateAccount}>
                     <Text style={styles.link}>Reactivate Account</Text>
                 </TouchableOpacity>
+
+
 
                 {loading && <ActivityIndicator size="large" color={themeColors.primary} style={styles.loadingIndicator} />}
             </KeyboardAvoidingView>
@@ -394,6 +441,9 @@ const getStyles = (themeColors) => StyleSheet.create({
         shadowOpacity: 0.25,
         shadowRadius: 3.84,
         elevation: 5,
+    },
+    disabledButton: {
+        backgroundColor: '#ccc',
     },
     buttonText: {
         color: 'white',
