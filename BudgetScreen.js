@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { onValue, push, ref, remove } from "firebase/database";
 import { useEffect, useState } from "react";
 import {
@@ -21,12 +21,17 @@ export default function BudgetScreen() {
 
   const router = useRouter();
   const { isDarkMode, formatAmount, convertToPKR, themeColors } = useAppContext();
+  const { startDate, endDate } = useLocalSearchParams();
 
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
   const [budgets, setBudgets] = useState([]);
+  const [filteredBudgets, setFilteredBudgets] = useState([]);
 
-  // Load budgets
+  // Check if adding budget is disabled for previous months
+  const isDisabled = endDate ? new Date(endDate) < new Date() : false;
+
+  // Load budgets from Firebase
   useEffect(() => {
     const userId = auth.currentUser?.uid || "guest";
     const budgetsRef = ref(database, `users/${userId}/budgets`);
@@ -44,6 +49,13 @@ export default function BudgetScreen() {
     });
   }, []);
 
+  // Filter budgets based on the selected date range
+  // This updates whenever the master list (budgets) or the date params change
+  useEffect(() => {
+    const filtered = budgets.filter((budget) => isBudgetInSelectedRange(budget));
+    setFilteredBudgets(filtered);
+  }, [budgets, startDate, endDate]);
+
   // Add budget
   const addBudget = () => {
     if (!category || !amount) return;
@@ -53,6 +65,7 @@ export default function BudgetScreen() {
       category,
       amount: amountInPKR,
       used: 0,
+      createdAt: new Date().toISOString(),
     });
     setCategory("");
     setAmount("");
@@ -79,12 +92,33 @@ export default function BudgetScreen() {
     );
   };
 
+  // Helper function to check if a budget is in the selected date range
+  const isBudgetInSelectedRange = (budget) => {
+    if (!budget.createdAt) return false;
+    const createdDate = new Date(budget.createdAt);
+    
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      // Set time to ensure full day coverage
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      createdDate.setHours(0, 0, 0, 0); // Compare based on date only
+      
+      return createdDate >= start && createdDate <= end;
+    } else {
+      // Default to current month if no params are passed
+      const today = new Date();
+      return createdDate.getMonth() === today.getMonth() && createdDate.getFullYear() === today.getFullYear();
+    }
+  };
+
   const styles = getStyles(isDarkMode, themeColors);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <FlatList
-        data={budgets}
+        data={filteredBudgets}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
           <>
@@ -106,9 +140,7 @@ export default function BudgetScreen() {
               keyboardType="numeric"
               value={amount}
               onChangeText={(text) => {
-                // Only allow positive numbers and decimals
                 const numericValue = text.replace(/[^0-9.]/g, '');
-                // Prevent multiple decimal points
                 const parts = numericValue.split('.');
                 if (parts.length > 2) {
                   setAmount(parts[0] + '.' + parts.slice(1).join(''));
@@ -119,8 +151,8 @@ export default function BudgetScreen() {
               placeholderTextColor="#aaa"
             />
 
-            <TouchableOpacity style={styles.saveButton} onPress={addBudget}>
-              <Text style={styles.saveText}>Add Budget</Text>
+            <TouchableOpacity style={[styles.saveButton, isDisabled && styles.disabledButton]} onPress={addBudget} disabled={isDisabled}>
+              <Text style={[styles.saveText, isDisabled && styles.disabledText]}>Add Budget</Text>
             </TouchableOpacity>
           </>
         }
@@ -210,6 +242,12 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     fontSize: 18,
     fontFamily: 'serif',
     fontWeight: 'bold'
+  },
+  disabledButton: {
+    backgroundColor: '#ccc',
+  },
+  disabledText: {
+    color: '#999',
   },
   card: {
     padding: 15,

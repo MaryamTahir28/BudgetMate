@@ -50,7 +50,7 @@ const getLocalDateString = (date) => {
 
 const HomeScreen = () => {
   const router = useRouter();
-  const { currency, formatAmount, isDarkMode, themeColors } = useAppContext();
+  const { currency, formatAmount, isDarkMode, themeColors, selectedDateRange, setSelectedDateRange } = useAppContext();
   const [activeScreen, setActiveScreen] = useState('home');
   const [activeTab, setActiveTab] = useState('expenses');
   const [balanceVisible, setBalanceVisible] = useState(false);
@@ -66,15 +66,7 @@ const HomeScreen = () => {
   const [selectedMonths, setSelectedMonths] = useState([]); // array of month indices 0-11
   const [selectedDate, setSelectedDate] = useState(null); // day of month or null
   const [selectedMonth, setSelectedMonth] = useState(null); // month index for selected date
-  const [selectedDateRange, setSelectedDateRange] = useState(() => {
-    const now = new Date();
-    const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return {
-      startDate: getLocalDateString(startDate),
-      endDate: getLocalDateString(endDate)
-    };
-  });
+
   const [currentMonthText, setCurrentMonthText] = useState(() => {
     const now = new Date();
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -83,6 +75,29 @@ const HomeScreen = () => {
   });
   // For override filter to show expenses of a specific month/year ignoring global date filter
   const [expensesMonthOverride, setExpensesMonthOverride] = useState(null); // {month: 1-12, year: number} or null
+
+  // Function to check if the current filter is for a past month
+  const isPastMonth = () => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    if (selectedDateRange.endDate) {
+      const endDate = new Date(selectedDateRange.endDate);
+      const endMonth = endDate.getMonth();
+      const endYear = endDate.getFullYear();
+      return endYear < currentYear || (endYear === currentYear && endMonth < currentMonth);
+    }
+    return false;
+  };
+
+  // Helper function to check if item is from current month
+  const isCurrentMonthItem = (dateStr) => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const itemDate = new Date(dateStr);
+    return itemDate.getMonth() === currentMonth && itemDate.getFullYear() === currentYear;
+  };
 
   // Function to handle month selection
   const handleMonthSelect = (monthIndex) => {
@@ -479,15 +494,17 @@ const HomeScreen = () => {
                       params: { ...item },
                     });
                   }}
-                  style={styles.editButton}
+                  style={[styles.editButton, !isCurrentMonthItem(item.date) && styles.disabledButton]}
+                  disabled={!isCurrentMonthItem(item.date)}
                 >
-                  <MaterialCommunityIcons name="pencil" size={20} color={themeColors.secondary} />
+                  <MaterialCommunityIcons name="pencil" size={20} color={isCurrentMonthItem(item.date) ? themeColors.secondary : 'grey'} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => deleteItem(item.firebaseKey, activeTab === 'expenses' ? 'expenses' : 'incomes')}
-                  style={styles.deleteButton}
+                  style={[styles.deleteButton, !isCurrentMonthItem(item.date) && styles.disabledButton]}
+                  disabled={!isCurrentMonthItem(item.date)}
                 >
-                  <MaterialCommunityIcons name="delete" size={20} color="red" />
+                  <MaterialCommunityIcons name="delete" size={20} color={isCurrentMonthItem(item.date) ? "red" : 'grey'} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -725,14 +742,21 @@ const HomeScreen = () => {
 
         <TouchableOpacity
           style={styles.footerItem}
-          onPress={() => router.push('/budget')}
+          onPress={() => router.push({
+            pathname: '/budget',
+            params: {
+              startDate: selectedDateRange.startDate,
+              endDate: selectedDateRange.endDate
+            }
+          })}
         >
           <Icon name="cash-multiple" size={24} color={activeScreen === 'budget' ? themeColors.secondary : (isDarkMode ? '#ccc' : '#333')} />
           <Text style={[styles.iconLabel, activeScreen === 'budget' && { color: themeColors.secondary, fontWeight: 'bold' }]}>Budget</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.plusButton}
+          style={[styles.plusButton, isPastMonth() && styles.plusButtonDisabled]}
+          disabled={isPastMonth()}
           onPress={() => {
             if (activeTab === 'expenses') {
               router.push('/addexpense');
@@ -741,12 +765,20 @@ const HomeScreen = () => {
             }
           }}
         >
-          <Icon name="plus" size={28} color="#fff" />
+          <Icon name="plus" size={28} color={isPastMonth() ? 'grey' : '#fff'} />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.footerItem}
-          onPress={() => router.push('/statistics')}
+          onPress={() => router.push({
+            pathname: '/statistics',
+            params: {
+              selectedStartDate: selectedDateRange.startDate,
+              selectedEndDate: selectedDateRange.endDate,
+              selectedMonth: selectedMonth,
+              selectedYear: currentYear
+            }
+          })}
         >
           <Icon name="chart-line" size={24} color={activeScreen === 'statistics' ? themeColors.secondary : (isDarkMode ? '#ccc' : '#333')} />
           <Text style={[styles.iconLabel, activeScreen === 'statistics' && { color: themeColors.secondary, fontWeight: 'bold' }]}>Statistics</Text>
@@ -901,6 +933,9 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     borderRadius: 4,
     backgroundColor: isDarkMode ? '#3A3A3A' : '#fff0f0',
   },
+  disabledButton: {
+    opacity: 0.5,
+  },
   totalCard: {
     marginTop: 20,
     flexDirection: 'row',
@@ -1030,6 +1065,9 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
     elevation: 5,
+  },
+  plusButtonDisabled: {
+    backgroundColor: '#ccc',
   },
    bottomNav: {
     flexDirection: 'row',

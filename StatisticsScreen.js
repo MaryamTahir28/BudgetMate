@@ -1,3 +1,4 @@
+import { useLocalSearchParams } from 'expo-router';
 import { getDatabase, onValue, ref } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -23,6 +24,7 @@ const categoryIcons = {
 
 const StatisticsScreen = () => {
   const { isDarkMode, formatAmount, currency, convertFromPKR , formatConvertedAmount, themeColors} = useAppContext();
+  const { selectedStartDate, selectedEndDate, selectedMonth, selectedYear } = useLocalSearchParams();
 
   const [income, setIncome] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -106,18 +108,34 @@ const StatisticsScreen = () => {
   }, []);
 
   const getFilteredData = (data) => {
-    const now = new Date();
-    let startDate;
-    if (timeFilter === 'weekly') {
-      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    } else if (timeFilter === 'monthly') {
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-    } else if (timeFilter === 'yearly') {
-      startDate = new Date(now.getFullYear(), 0, 1);
+    if (selectedStartDate && selectedEndDate) {
+      const start = new Date(selectedStartDate);
+      const end = new Date(selectedEndDate);
+      return data.filter(item => {
+        const itemDate = new Date(item.date);
+        return itemDate >= start && itemDate <= end;
+      });
+    } else if (selectedMonth && selectedYear) {
+      const month = parseInt(selectedMonth);
+      const year = parseInt(selectedYear);
+      return data.filter(item => {
+        const itemDate = new Date(item.date);
+        return itemDate.getMonth() === month && itemDate.getFullYear() === year;
+      });
     } else {
-      return data; // all time
+      const now = new Date();
+      let startDate;
+      if (timeFilter === 'weekly') {
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (timeFilter === 'monthly') {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      } else if (timeFilter === 'yearly') {
+        startDate = new Date(now.getFullYear(), 0, 1);
+      } else {
+        return data; // all time
+      }
+      return data.filter(item => new Date(item.date) >= startDate);
     }
-    return data.filter(item => new Date(item.date) >= startDate);
   };
 
   const filteredIncome = getFilteredData(income);
@@ -148,43 +166,94 @@ const StatisticsScreen = () => {
   };
 
   const getBarChartData = () => {
-    const now = new Date();
     let labels = [];
     let data = [];
 
-    if (timeFilter === 'weekly') {
-      // Last 7 days
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-        const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-        labels.push(dayName);
-        const dayExpenses = filteredExpenses.filter(expense => {
-          const expenseDate = new Date(expense.date);
-          return expenseDate.toDateString() === date.toDateString();
-        }).reduce((sum, expense) => sum + convertFromPKR(parseFloat(expense.amount || 0), currency), 0);
-        data.push(dayExpenses);
+    if (selectedStartDate && selectedEndDate) {
+      const start = new Date(selectedStartDate);
+      const end = new Date(selectedEndDate);
+      const diffTime = Math.abs(end - start);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays <= 31) {
+        // Show by day
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+          labels.push(dayName);
+          const dayExpenses = filteredExpenses.filter(expense => {
+            const expenseDate = new Date(expense.date);
+            return expenseDate.toDateString() === d.toDateString();
+          }).reduce((sum, expense) => sum + convertFromPKR(parseFloat(expense.amount || 0), currency), 0);
+          data.push(dayExpenses);
+        }
+      } else {
+        // Show by week
+        const weeks = [];
+        let currentWeekStart = new Date(start);
+        while (currentWeekStart <= end) {
+          const weekEnd = new Date(currentWeekStart);
+          weekEnd.setDate(weekEnd.getDate() + 6);
+          if (weekEnd > end) weekEnd.setTime(end.getTime());
+          weeks.push({ start: new Date(currentWeekStart), end: new Date(weekEnd) });
+          currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+        }
+        weeks.forEach(week => {
+          labels.push(`${week.start.getDate()}/${week.start.getMonth() + 1}`);
+          const weekExpenses = filteredExpenses.filter(expense => {
+            const expenseDate = new Date(expense.date);
+            return expenseDate >= week.start && expenseDate <= week.end;
+          }).reduce((sum, expense) => sum + convertFromPKR(parseFloat(expense.amount || 0), currency), 0);
+          data.push(weekExpenses);
+        });
       }
-    } else if (timeFilter === 'monthly') {
-      // Current month days
-      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    } else if (selectedMonth && selectedYear) {
+      const month = parseInt(selectedMonth);
+      const year = parseInt(selectedYear);
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
       for (let day = 1; day <= daysInMonth; day++) {
         labels.push(day.toString());
         const dayExpenses = filteredExpenses.filter(expense => {
           const expenseDate = new Date(expense.date);
-          return expenseDate.getDate() === day && expenseDate.getMonth() === now.getMonth() && expenseDate.getFullYear() === now.getFullYear();
+          return expenseDate.getDate() === day && expenseDate.getMonth() === month && expenseDate.getFullYear() === year;
         }).reduce((sum, expense) => sum + convertFromPKR(parseFloat(expense.amount || 0), currency), 0);
         data.push(dayExpenses);
       }
-    } else if (timeFilter === 'yearly') {
-      // Months of the year
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      for (let month = 0; month < 12; month++) {
-        labels.push(monthNames[month]);
-        const monthExpenses = filteredExpenses.filter(expense => {
-          const expenseDate = new Date(expense.date);
-          return expenseDate.getMonth() === month && expenseDate.getFullYear() === now.getFullYear();
-        }).reduce((sum, expense) => sum + convertFromPKR(parseFloat(expense.amount || 0), currency), 0);
-        data.push(monthExpenses);
+    } else {
+      const now = new Date();
+      if (timeFilter === 'weekly') {
+        // Last 7 days
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+          const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+          labels.push(dayName);
+          const dayExpenses = filteredExpenses.filter(expense => {
+            const expenseDate = new Date(expense.date);
+            return expenseDate.toDateString() === date.toDateString();
+          }).reduce((sum, expense) => sum + convertFromPKR(parseFloat(expense.amount || 0), currency), 0);
+          data.push(dayExpenses);
+        }
+      } else if (timeFilter === 'monthly') {
+        // Current month days
+        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        for (let day = 1; day <= daysInMonth; day++) {
+          labels.push(day.toString());
+          const dayExpenses = filteredExpenses.filter(expense => {
+            const expenseDate = new Date(expense.date);
+            return expenseDate.getDate() === day && expenseDate.getMonth() === now.getMonth() && expenseDate.getFullYear() === now.getFullYear();
+          }).reduce((sum, expense) => sum + convertFromPKR(parseFloat(expense.amount || 0), currency), 0);
+          data.push(dayExpenses);
+        }
+      } else if (timeFilter === 'yearly') {
+        // Months of the year
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        for (let month = 0; month < 12; month++) {
+          labels.push(monthNames[month]);
+          const monthExpenses = filteredExpenses.filter(expense => {
+            const expenseDate = new Date(expense.date);
+            return expenseDate.getMonth() === month && expenseDate.getFullYear() === now.getFullYear();
+          }).reduce((sum, expense) => sum + convertFromPKR(parseFloat(expense.amount || 0), currency), 0);
+          data.push(monthExpenses);
+        }
       }
     }
 

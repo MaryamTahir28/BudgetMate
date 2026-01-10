@@ -20,25 +20,24 @@ import { auth, database } from "../../firebaseConfig";
 export default function WishlistScreen() {
 
   const router = useRouter();
-  const { isDarkMode, formatAmount, currency, convertFromPKR, convertToPKR, themeColors } = useAppContext();
+  const { isDarkMode, formatAmount, convertToPKR, themeColors, selectedDateRange } = useAppContext();
+
+  // Use global selectedDateRange for consistent filtering
+  const startDate = selectedDateRange?.startDate;
+  const endDate = selectedDateRange?.endDate;
 
   const [user, setUser] = useState(null);
-  const [authChecked, setAuthChecked] = useState(false);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [wishlist, setWishlist] = useState([]);
+  const [filteredWishlist, setFilteredWishlist] = useState([]); // 2. Added filtered state
 
   useEffect(() => {
-    if (auth.currentUser) {
-      setUser(auth.currentUser);
-      setAuthChecked(true);
-    }
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setUser(user);
-      setAuthChecked(true);
     });
     return unsubscribe;
-  }, [router, authChecked]);
+  }, []);
 
   // Load wishlist
   useEffect(() => {
@@ -57,6 +56,12 @@ export default function WishlistScreen() {
       }
     });
   }, [user]);
+
+  // 3. Filter Effect
+  useEffect(() => {
+    const filtered = wishlist.filter(isWishInSelectedRange);
+    setFilteredWishlist(filtered);
+  }, [wishlist, startDate, endDate]);
 
   // Add wishlist item
   const addWishlistItem = async () => {
@@ -89,6 +94,26 @@ export default function WishlistScreen() {
     }
   };
 
+  // 4. Helper function for date range
+  const isWishInSelectedRange = (item) => {
+    if (!item.createdAt) return false;
+    const createdDate = new Date(item.createdAt);
+    
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      createdDate.setHours(0, 0, 0, 0);
+      
+      return createdDate >= start && createdDate <= end;
+    } else {
+      // Default to current month
+      const today = new Date();
+      return createdDate.getMonth() === today.getMonth() && createdDate.getFullYear() === today.getFullYear();
+    }
+  };
+
   // Handle wishlist deletion
   const handleDelete = (id) => {
     Alert.alert(
@@ -115,7 +140,7 @@ export default function WishlistScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <FlatList
-        data={wishlist}
+        data={filteredWishlist} // Render filtered list
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
           <>
@@ -138,9 +163,7 @@ export default function WishlistScreen() {
               keyboardType="numeric"
               value={amount}
               onChangeText={(text) => {
-                // Only allow positive numbers and decimals
                 const numericValue = text.replace(/[^0-9.]/g, '');
-                // Prevent multiple decimal points
                 const parts = numericValue.split('.');
                 if (parts.length > 2) {
                   setAmount(parts[0] + '.' + parts.slice(1).join(''));
@@ -157,29 +180,39 @@ export default function WishlistScreen() {
             </TouchableOpacity>
           </>
         }
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.card} onPress={() => router.push({ pathname: "/wishlistDetails", params: { id: item.id } })}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>{item.name}</Text>
-              <View style={styles.iconContainer}>
-                <TouchableOpacity
-                  onPress={() => router.push({ pathname: "/editWishlist", params: { id: item.id } })}
-                  style={styles.editButton}
-                >
-                  <MaterialCommunityIcons name="pencil" size={20} color={themeColors.secondary} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleDelete(item.id)}
-                  style={styles.deleteButton}
-                >
-                  <MaterialCommunityIcons name="delete" size={20} color="red" />
-                </TouchableOpacity>
+        renderItem={({ item }) => {
+          return (
+            <TouchableOpacity 
+              style={styles.card} 
+              onPress={() => router.push({ pathname: "/wishlistDetails", params: { id: item.id } })}
+            >
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>{item.name}</Text>
+                <View style={styles.iconContainer}>
+                  <TouchableOpacity
+                    onPress={() => router.push({ pathname: "/editWishlist", params: { id: item.id } })}
+                    style={styles.editButton}
+                  >
+                    <MaterialCommunityIcons name="pencil" size={20} color={themeColors.secondary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDelete(item.id)}
+                    style={styles.deleteButton}
+                  >
+                    <MaterialCommunityIcons name="delete" size={20} color="red" />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-            <Text style={styles.cardText}>Amount: {formatAmount(item.amount)}</Text>
-          </TouchableOpacity>
-        )}
+              <Text style={styles.cardText}>Amount: {formatAmount(item.amount)}</Text>
+            </TouchableOpacity>
+          );
+        }}
         contentContainerStyle={styles.container}
+        ListEmptyComponent={
+          <Text style={{ textAlign: 'center', marginTop: 20, color: 'gray' }}>
+            No wishlist items found for this period.
+          </Text>
+        }
       />
     </SafeAreaView>
   );

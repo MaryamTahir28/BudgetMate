@@ -295,7 +295,7 @@ const SettingsScreen = () => {
 
       if (snapshot.exists()) {
         const logsData = snapshot.val();
-        const logsArray = Object.values(logsData).sort((a, b) => b.timestamp - a.timestamp);
+        const logsArray = Object.values(logsData).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         setActivityLogs(logsArray);
       } else {
         setActivityLogs([]);
@@ -856,7 +856,7 @@ const SettingsScreen = () => {
                   {activityLogs.map((log, index) => (
                     <View key={index} style={styles.logItem}>
                       <Text style={styles.logText}>
-                        <Text style={styles.logLabel}>Action:</Text> {log.action}
+                        <Text style={styles.logLabel}>Device:</Text> {log.device || 'Unknown'}
                       </Text>
                       <Text style={styles.logText}>
                         <Text style={styles.logLabel}>Date:</Text> {new Date(log.timestamp).toLocaleString()}

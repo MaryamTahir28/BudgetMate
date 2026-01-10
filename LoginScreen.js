@@ -1,12 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Device from 'expo-device';
 import * as Linking from 'expo-linking'; // ✅ Import Linking
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
     isSignInWithEmailLink,
-    sendPasswordResetEmail // Added back in case you need it
-    ,
-
-
+    sendPasswordResetEmail, // Added back in case you need it
     signInWithEmailAndPassword,
     signInWithEmailLink
 } from 'firebase/auth';
@@ -192,6 +190,7 @@ const LoginScreen = () => {
 
             // 5. 📝 Log Activity
             try {
+                const deviceName = Device.modelName || `${Platform.OS} Device`;
                 const activityRef = ref(database, `users/${currentUser.uid}/activityLogs`);
                 const newActivityRef = push(activityRef);
                 await update(newActivityRef, {
@@ -199,6 +198,7 @@ const LoginScreen = () => {
                     timestamp: new Date().toISOString(),
                     platform: Platform.OS,
                     email: currentUser.email,
+                    device: deviceName,
                 });
             } catch (logError) {
                 console.error('Failed to log login activity:', logError);
@@ -209,10 +209,9 @@ const LoginScreen = () => {
 
         } catch (error) {
             setLoading(false);
-            console.error("LOGIN ERROR:", error.code); // Check your terminal!
             if (error.code === 'auth/too-many-requests') {
                 showAlert('Server Cooldown', 'Too many attempts. Please wait a full minute.');
-                return; 
+                return;
             }
 
             // Standard Error Handling
@@ -234,18 +233,17 @@ const LoginScreen = () => {
                 shouldIncrement = true;
                 errorMessage = 'Invalid email or password.'; // Generic message for security
             }
-            
+
 
             if (shouldIncrement) {
                 const newFailedAttempts = failedAttempts + 1;
-                console.log('Failed attempts:', newFailedAttempts);
                 setFailedAttempts(newFailedAttempts);
                 if (newFailedAttempts >= 4) {
                     showAlert('Too Many Failed Attempts', 'Login blocked for 15 seconds.');
                     setLoginBlocked(true);
                     setBlockTimer(15);
                     setFailedAttempts(0);
-                    return; 
+                    return;
                 }
             }
             showAlert('Login Failed', errorMessage);

@@ -63,6 +63,17 @@ const AddExpenseScreen = () => {
       return;
     }
 
+    // Check if the selected date is in the current month
+    const now = new Date();
+    const selectedMonth = date.getMonth();
+    const selectedYear = date.getFullYear();
+    const nowMonth = now.getMonth();
+    const nowYear = now.getFullYear();
+    if (selectedMonth !== nowMonth || selectedYear !== nowYear) {
+      Alert.alert('Invalid Date', 'You can only add expenses for the current month.');
+      return;
+    }
+
     const userId = auth.currentUser?.uid || 'guest';
 
     // Get current month and year
