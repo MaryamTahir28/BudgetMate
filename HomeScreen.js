@@ -331,9 +331,57 @@ const HomeScreen = () => {
     }
   };
 
+  // Helper function to convert time string to seconds since midnight
+  const timeToSeconds = (timeStr) => {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    let hour = parseInt(parts[0]);
+    let minuteStr = parts[1];
+    let second = 0;
+    if (parts.length >= 3) {
+      second = parseInt(parts[2]);
+    }
+    // Check for AM/PM
+    const hasPM = timeStr.toUpperCase().includes('PM');
+    const hasAM = timeStr.toUpperCase().includes('AM');
+    if (hasPM && hour !== 12) hour += 12;
+    if (hasAM && hour === 12) hour = 0;
+    // Remove AM/PM from minuteStr
+    minuteStr = minuteStr.replace(/ AM| PM/gi, '');
+    let minute = parseInt(minuteStr);
+    return hour * 3600 + minute * 60 + second;
+  };
+
+  // Helper function to get timestamp in milliseconds for sorting
+  const getTimestamp = (item) => {
+    const dateStr = item.date;
+    const timeStr = item.time;
+    // Normalize time to 24-hour format
+    let hour = parseInt(timeStr.split(':')[0]);
+    let minute = parseInt(timeStr.split(':')[1]);
+    let second = 0;
+    if (timeStr.split(':').length > 2) {
+      second = parseInt(timeStr.split(':')[2]);
+    }
+    const hasPM = timeStr.toUpperCase().includes('PM');
+    const hasAM = timeStr.toUpperCase().includes('AM');
+    if (hasPM && hour !== 12) hour += 12;
+    if (hasAM && hour === 12) hour = 0;
+    const time24 = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:${second.toString().padStart(2, '0')}`;
+    const dateTimeStr = `${dateStr}T${time24}`;
+    return new Date(dateTimeStr).getTime();
+  };
+
   const groupedByDate = {};
   const list = activeTab === 'expenses' ? expenses : income;
-  const sortedList = [...list].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sortedList = [...list].sort((a, b) => {
+    // Sort by date descending (newer dates first), then by time descending within same date
+    const dateA = new Date(a.date);
+    const dateB = new Date(b.date);
+    const dateDiff = dateB.getTime() - dateA.getTime();
+    if (dateDiff !== 0) return dateDiff;
+    return timeToSeconds(b.time) - timeToSeconds(a.time);
+  });
   sortedList.forEach(item => {
     const date = new Date(item.date);
     const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
@@ -384,19 +432,11 @@ const HomeScreen = () => {
   const totalBalance = incomeTotal - expenseTotal;
 
   // List for rendering considering override or date filter and search filter
-  const filteredList = list.filter(item => 
-    item.category.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredList = sortedList.filter(item =>
+    item.category && item.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // New function to handle when income item is clicked to show all expenses of that month
-  const handleIncomeClick = (item) => {
-    const date = new Date(item.date);
-    const month = date.getMonth() + 1;
-    const year = date.getFullYear();
-    setExpensesMonthOverride({ month, year });
-    setActiveTab('expenses');
-    setCurrentMonthText(`Expenses for ${month}/${year} `);
-  };
+
 
   const renderGroupedExpenses = () => {
     const groupedData = {};
@@ -436,27 +476,35 @@ const HomeScreen = () => {
       });
     }
 
+    const dateLabels = [];
+    const dateMap = {};
     itemsToRender.forEach((item) => {
       const date = new Date(item.date);
       const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
       const label = date.toLocaleDateString(undefined, options);
-      if (!groupedData[label]) groupedData[label] = [];
+      if (!groupedData[label]) {
+        groupedData[label] = [];
+        dateLabels.push(label);
+        dateMap[label] = date;
+      }
       groupedData[label].push(item);
     });
 
-    return Object.entries(groupedData).map(([dateLabel, items]) => (
+    // Sort dateLabels by date descending (most recent first)
+    dateLabels.sort((a, b) => dateMap[b] - dateMap[a]);
+
+    // Sort items within each date group by time descending (most recent first)
+    Object.keys(groupedData).forEach(dateLabel => {
+      groupedData[dateLabel].sort((a, b) => timeToSeconds(b.time) - timeToSeconds(a.time));
+    });
+
+    return dateLabels.map((dateLabel) => (
       <View key={dateLabel}>
         <Text style={styles.dateGroupLabel}>{dateLabel}</Text>
-        {items.map((item) => (
+        {groupedData[dateLabel].map((item) => (
           <TouchableOpacity
             key={item.firebaseKey}
-            onPress={() => {
-              if (activeTab === 'income') {
-                handleIncomeClick(item);
-              } else {
-                toggleNote(item.firebaseKey);
-              }
-            }}
+            onPress={() => toggleNote(item.firebaseKey)}
             style={styles.expenseItem}
             activeOpacity={0.9}
           >
@@ -487,25 +535,29 @@ const HomeScreen = () => {
                 {formatAmount(item.amount)}
               </Text>
               <View style={styles.actions}>
-                <TouchableOpacity
-                  onPress={() => {
-                    router.push({
-                      pathname: activeTab === 'expenses' ? '/addexpense' : '/addincome',
-                      params: { ...item },
-                    });
-                  }}
-                  style={[styles.editButton, !isCurrentMonthItem(item.date) && styles.disabledButton]}
-                  disabled={!isCurrentMonthItem(item.date)}
-                >
-                  <MaterialCommunityIcons name="pencil" size={20} color={isCurrentMonthItem(item.date) ? themeColors.secondary : 'grey'} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => deleteItem(item.firebaseKey, activeTab === 'expenses' ? 'expenses' : 'incomes')}
-                  style={[styles.deleteButton, !isCurrentMonthItem(item.date) && styles.disabledButton]}
-                  disabled={!isCurrentMonthItem(item.date)}
-                >
-                  <MaterialCommunityIcons name="delete" size={20} color={isCurrentMonthItem(item.date) ? "red" : 'grey'} />
-                </TouchableOpacity>
+                {!item.isSavingsExpense && (
+                  <>
+                    <TouchableOpacity
+                      onPress={() => {
+                        router.push({
+                          pathname: activeTab === 'expenses' ? '/addexpense' : '/addincome',
+                          params: { ...item },
+                        });
+                      }}
+                      style={[styles.editButton, !isCurrentMonthItem(item.date) && styles.disabledButton]}
+                      disabled={!isCurrentMonthItem(item.date)}
+                    >
+                      <MaterialCommunityIcons name="pencil" size={20} color={isCurrentMonthItem(item.date) ? themeColors.secondary : 'grey'} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => deleteItem(item.firebaseKey, activeTab === 'expenses' ? 'expenses' : 'incomes')}
+                      style={[styles.deleteButton, !isCurrentMonthItem(item.date) && styles.disabledButton]}
+                      disabled={!isCurrentMonthItem(item.date)}
+                    >
+                      <MaterialCommunityIcons name="delete" size={20} color={isCurrentMonthItem(item.date) ? "red" : 'grey'} />
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             </View>
           </TouchableOpacity>

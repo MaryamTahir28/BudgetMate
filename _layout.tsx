@@ -8,12 +8,10 @@ import { useEffect } from 'react';
 import { Alert, Linking } from 'react-native';
 import 'react-native-reanimated';
 
-import { Auth, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
+import { isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import { ref, update } from 'firebase/database';
 import { AppProvider, useAppContext } from '../AppContext';
-import { database, auth as firebaseAuth } from '../firebaseConfig';
-
-const auth = firebaseAuth as Auth;
+import { auth, database } from '../firebaseConfig';
 
 function RootLayoutContent() {
   const { isDarkMode, themeColors } = useAppContext();

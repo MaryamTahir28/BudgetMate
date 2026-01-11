@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { onValue, push, ref, remove, update } from 'firebase/database';
+import { get, onValue, push, ref, remove, update } from 'firebase/database';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -73,8 +73,12 @@ const SavingsGoalsScreen = () => {
   const [editLinkedWishId, setEditLinkedWishId] = useState(null);
   const [editSelectedIncomeCategories, setEditSelectedIncomeCategories] = useState([]);
 
+  // Additional states for income exceeded modal
+  const [showIncomeExceededModal, setShowIncomeExceededModal] = useState(false);
+  const [incomeExceededData, setIncomeExceededData] = useState({});
+
   // --- HELPER: Check Date Range ---
-  const isGoalInSelectedRange = (goal) => {
+  const isGoalInSelectedRange = (goal, isCompleted) => {
     // 1. Safety check
     if (!goal.createdAt) return false;
 
@@ -104,8 +108,23 @@ const SavingsGoalsScreen = () => {
     start.setHours(0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
 
-    // 7. Compare
-    return createdDate >= start && createdDate <= end;
+    // 7. For completed goals, show only those created within the selected range
+    if (isCompleted) {
+      return createdDate >= start && createdDate <= end;
+    }
+
+    // 8. For active goals, show if the selected range is current month or later
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const rangeStartMonth = start.getMonth();
+    const rangeStartYear = start.getFullYear();
+
+    if (rangeStartYear > currentYear || (rangeStartYear === currentYear && rangeStartMonth >= currentMonth)) {
+      return true; // Show active goals in current or future months
+    } else {
+      return false; // Don't show active goals in past months
+    }
   };
 
   const openUpdateModal = (goal) => {
@@ -144,6 +163,56 @@ const SavingsGoalsScreen = () => {
       Alert.alert('Notice', `You only need ${formatAmount(remaining)} ${currency} more to reach your goal. You cannot add more than the remaining amount.`);
       return;
     }
+
+    // Get current month and year
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const currentMonthPrefix = `${currentYear}-${currentMonth}`;
+
+    // Fetch total income for current month
+    const incomeRef = ref(database, `users/${user.uid}/incomes`);
+    const incomeSnapshot = await get(incomeRef);
+    let totalIncome = 0;
+    if (incomeSnapshot.exists()) {
+      const incomes = incomeSnapshot.val();
+      for (const key in incomes) {
+        const incomeDate = incomes[key].date || '';
+        if (incomeDate.startsWith(currentMonthPrefix)) {
+          totalIncome += parseFloat(incomes[key].amount || 0);
+        }
+      }
+    }
+
+    // Fetch total expenses for current month
+    const expensesRef = ref(database, `users/${user.uid}/expenses`);
+    const expensesSnapshot = await get(expensesRef);
+    let totalExpenses = 0;
+    if (expensesSnapshot.exists()) {
+      const expenses = expensesSnapshot.val();
+      for (const key in expenses) {
+        const expenseDate = expenses[key].date || '';
+        if (expenseDate.startsWith(currentMonthPrefix)) {
+          totalExpenses += parseFloat(expenses[key].amount || 0);
+        }
+      }
+    }
+
+    // Check if adding this savings amount exceeds total income
+    if (totalExpenses + parsedAmount > totalIncome) {
+      const shouldProceed = await new Promise((resolve) => {
+        setIncomeExceededData({
+          totalIncome,
+          totalExpenses,
+          newExpense: parsedAmount,
+          onProceed: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+        setShowIncomeExceededModal(true);
+      });
+      if (!shouldProceed) return;
+    }
+
     try {
       await update(ref(database, `users/${user.uid}/savingsGoals/${currentGoal.id}`), {
         savedAmount: convertToPKR(newTotal)
@@ -151,6 +220,24 @@ const SavingsGoalsScreen = () => {
       if (newTotal >= targetAmount) {
         Alert.alert('Congratulations!', `🎉 You have reached your goal: ${currentGoal.goalName}! 🎉`);
       }
+
+      // Determine the date and time for the savings expense to position it correctly
+      const today = new Date();
+      const savingsDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+      const savingsTime = '23:59:59';
+
+      // Automatically create a view-only expense entry for the savings amount
+      await push(ref(database, `users/${user.uid}/expenses`), {
+        title: '',
+        amount: parsedAmount.toString(),
+        category: 'Savings',
+        note: `Savings for ${currentGoal.goalName}`,
+        date: savingsDate,
+        time: savingsTime,
+        isSavingsExpense: true,
+        goalId: currentGoal.id,
+      });
+
       setUpdateModalVisible(false);
       setCurrentGoal(null);
       setNewSavedAmount('');
@@ -200,26 +287,27 @@ const SavingsGoalsScreen = () => {
   // --- Filter Effect ---
   // This updates whenever the goals change OR the date range changes
   useEffect(() => {
-    const activeFiltered = savingsGoals.filter(isGoalInSelectedRange).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    const completedFiltered = completedGoals.filter(isGoalInSelectedRange).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const activeFiltered = savingsGoals.filter(goal => isGoalInSelectedRange(goal, false)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const completedFiltered = completedGoals.filter(goal => isGoalInSelectedRange(goal, true)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     setFilteredActiveGoals(activeFiltered);
     setFilteredCompletedGoals(completedFiltered);
   }, [savingsGoals, completedGoals, startDate, endDate]);
 
 
-  const calculateMonthlySavings = (goal) => {
+  const calculateSavingsNeeded = (goal) => {
     if (!goal.targetAmount || !goal.timeframe || !goal.durationValue) return 0;
     const target = parseFloat(goal.targetAmount);
     const duration = parseInt(goal.durationValue);
-    let months = duration;
-    if (goal.timeframe === 'weeks') {
-      months = duration / 4.345;
-    } else if (goal.timeframe === 'years') {
-      months = duration * 12;
-    }
-    if (months <= 0) return 0;
-    return target / months;
+    if (duration <= 0) return 0;
+    return target / duration;
+  };
+
+  const getSavingsLabel = (timeframe) => {
+    if (timeframe === 'weeks') return 'Weekly';
+    if (timeframe === 'months') return 'Monthly';
+    if (timeframe === 'years') return 'Yearly';
+    return 'Monthly'; // fallback
   };
 
   const calculateProgress = (goal) => {
@@ -275,14 +363,53 @@ const SavingsGoalsScreen = () => {
   const deleteGoal = (id) => {
     Alert.alert(
       'Delete Goal',
-      'Are you sure you want to delete this savings goal?',
+      'Are you sure you want to delete this savings goal? This will refund the saved amounts back to your total balance.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           onPress: async () => {
             try {
+              // Fetch all expenses to find savings expenses for this goal
+              const expensesRef = ref(database, `users/${user.uid}/expenses`);
+              const expensesSnapshot = await get(expensesRef);
+              if (expensesSnapshot.exists()) {
+                const expenses = expensesSnapshot.val();
+                const savingsExpensesToDelete = Object.keys(expenses).filter(key =>
+                  (expenses[key].isSavingsExpense === true || expenses[key].isSavingsExpense === 'true') && expenses[key].goalId == id
+                );
+                // Refund budgets for each savings expense before removing
+                for (const expenseKey of savingsExpensesToDelete) {
+                  const expenseData = expenses[expenseKey];
+                  const amountToRefund = parseFloat(expenseData.amount || 0);
+                  const category = expenseData.category.trim().toLowerCase();
+                  const budgetsRef = ref(database, `users/${user.uid}/budgets`);
+                  const budgetSnapshot = await get(budgetsRef);
+                  if (budgetSnapshot.exists()) {
+                    const budgetsData = budgetSnapshot.val();
+                    for (const budgetId in budgetsData) {
+                      const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
+                      if (budgetCategory === category) {
+                        const budgetRef = ref(database, `/users/${user.uid}/budgets/${budgetId}`);
+                        const budgetSnap = await get(budgetRef);
+                        if (budgetSnap.exists()) {
+                          const budgetData = budgetSnap.val();
+                          const currentUsed = budgetData.used || 0;
+                          const newUsed = Math.max(0, currentUsed - amountToRefund);
+                          await update(budgetRef, { used: newUsed });
+                        }
+                      }
+                    }
+                  }
+                }
+                // Remove each savings expense for this goal
+                for (const expenseKey of savingsExpensesToDelete) {
+                  await remove(ref(database, `users/${user.uid}/expenses/${expenseKey}`));
+                }
+              }
+              // Now delete the goal
               await remove(ref(database, `users/${user.uid}/savingsGoals/${id}`));
+              Alert.alert('Success', 'Savings goal deleted and amounts refunded.');
             } catch (error) {
               Alert.alert('Error', 'Failed to delete goal: ' + error.message);
             }
@@ -370,7 +497,8 @@ const SavingsGoalsScreen = () => {
                 <>
                   <Text style={styles.sectionTitle}>Active Goals</Text>
                   {filteredActiveGoals.map((item) => {
-                    const monthlyNeeded = calculateMonthlySavings(item);
+                    const savingsNeeded = calculateSavingsNeeded(item);
+                    const savingsLabel = getSavingsLabel(item.timeframe);
                     const progressPercent = calculateProgress(item);
                     const linkedWish = wishlist.find(w => w.id === item.linkedWishId);
 
@@ -392,7 +520,7 @@ const SavingsGoalsScreen = () => {
                         )}
                         <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Target Amount:</Text> {formatAmount(convertFromPKR(item.targetAmount))} {currency}</Text>
                         <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Timeframe:</Text> {item.durationValue} {item.timeframe}</Text>
-                        <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Estimated Monthly Savings Needed:</Text> {formatAmount(monthlyNeeded)} {currency}</Text>
+                        <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Estimated {savingsLabel} Savings Needed:</Text> {formatAmount(savingsNeeded)} {currency}</Text>
                         <Text style={{color: themeColors.primary}}><Text style={{fontWeight: 'bold'}}>Percentage from Income:</Text> {item.monthlySavingPercent || 0}% {item.selectedIncomeCategories && item.selectedIncomeCategories.length > 0 ? `(${item.selectedIncomeCategories.join(', ')})` : ''}</Text>
                         <View style={styles.progressBarBackground}>
                           <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
@@ -760,6 +888,50 @@ const SavingsGoalsScreen = () => {
             </View>
 
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Modal for income exceeded alert */}
+      <Modal visible={showIncomeExceededModal} animationType="slide" transparent={true}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Income Exceeded</Text>
+            <Text style={{ color: themeColors.primary, fontFamily: 'serif', fontSize: 16, marginBottom: 10 }}>
+              Adding this savings amount will exceed your total income for the month.
+            </Text>
+            <Text style={{ color: themeColors.primary, fontFamily: 'serif', fontSize: 16, marginBottom: 5 }}>
+              <Text style={{ fontWeight: 'bold' }}>Total Income:</Text> {formatAmount(incomeExceededData.totalIncome)} {currency}
+            </Text>
+            <Text style={{ color: themeColors.primary, fontFamily: 'serif', fontSize: 16, marginBottom: 5 }}>
+              <Text style={{ fontWeight: 'bold' }}>Total Expenses:</Text> {formatAmount(incomeExceededData.totalExpenses)} {currency}
+            </Text>
+            <Text style={{ color: themeColors.primary, fontFamily: 'serif', fontSize: 16, marginBottom: 20 }}>
+              <Text style={{ fontWeight: 'bold' }}>New Savings Amount:</Text> {formatAmount(incomeExceededData.newExpense)} {currency}
+            </Text>
+            <Text style={{ color: themeColors.primary, fontFamily: 'serif', fontSize: 16, marginBottom: 20 }}>
+              <Text style={{ fontWeight: 'bold' }}>After Adding:</Text> {formatAmount(incomeExceededData.totalExpenses + incomeExceededData.newExpense)} {currency} (Exceeds income by {formatAmount((incomeExceededData.totalExpenses + incomeExceededData.newExpense) - incomeExceededData.totalIncome)} {currency})
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.button}
+                onPress={() => {
+                  setShowIncomeExceededModal(false);
+                  incomeExceededData.onProceed();
+                }}
+              >
+                <Text style={styles.buttonText}>Proceed</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={() => {
+                  setShowIncomeExceededModal(false);
+                  incomeExceededData.onCancel();
+                }}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>

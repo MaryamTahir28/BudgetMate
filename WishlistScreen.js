@@ -98,19 +98,29 @@ export default function WishlistScreen() {
   const isWishInSelectedRange = (item) => {
     if (!item.createdAt) return false;
     const createdDate = new Date(item.createdAt);
-    
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-      createdDate.setHours(0, 0, 0, 0);
-      
-      return createdDate >= start && createdDate <= end;
+
+    // If NO filter is selected (default view), SHOW ONLY CURRENT MONTH ITEMS
+    if (!startDate || !endDate) {
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+      const itemMonth = createdDate.getMonth();
+      const itemYear = createdDate.getFullYear();
+      return itemMonth === currentMonth && itemYear === currentYear;
+    }
+
+    // For selected range, show if the selected range is current month or later
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const rangeStart = new Date(startDate);
+    const rangeStartMonth = rangeStart.getMonth();
+    const rangeStartYear = rangeStart.getFullYear();
+
+    if (rangeStartYear > currentYear || (rangeStartYear === currentYear && rangeStartMonth >= currentMonth)) {
+      return true; // Show wishlist items in current or future months
     } else {
-      // Default to current month
-      const today = new Date();
-      return createdDate.getMonth() === today.getMonth() && createdDate.getFullYear() === today.getFullYear();
+      return false; // Don't show wishlist items in past months
     }
   };
 
