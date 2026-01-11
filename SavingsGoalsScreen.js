@@ -199,7 +199,9 @@ const SavingsGoalsScreen = () => {
     }
 
     // Check if adding this savings amount exceeds total income
-    if (totalExpenses + parsedAmount > totalIncome) {
+    const deficit = totalExpenses + parsedAmount - totalIncome;
+    if (deficit > 0) {
+      // Show income exceeded modal
       const shouldProceed = await new Promise((resolve) => {
         setIncomeExceededData({
           totalIncome,
@@ -934,6 +936,7 @@ const SavingsGoalsScreen = () => {
           </View>
         </View>
       </Modal>
+
     </SafeAreaView>
   );
 };

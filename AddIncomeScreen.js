@@ -3,7 +3,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { get, push, ref, update } from 'firebase/database';
+import { get, push, ref, remove, update } from 'firebase/database';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StatusBar,
@@ -17,7 +17,7 @@ import { useAppContext } from '../../AppContext';
 import { auth, database } from '../../firebaseConfig';
 
 const initialCategories = [
-  'Salary', 'Bonus', 'Freelance', 'Business', 'Gift', 'Interest', 'Other',
+  'Salary', 'Bonus', 'Freelance', 'Business', 'Gift', 'Interest', 'Savings', 'Other',
 ];
 
 const AddIncomeScreen = () => {
@@ -72,7 +72,7 @@ const AddIncomeScreen = () => {
     }
 
     const incomeData = {
-      amount: amountValue.toString(),
+      amount: amountValue,
       category: useCustomCategory ? customCategory : selectedCategory,
       note,
       date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
@@ -89,6 +89,37 @@ const AddIncomeScreen = () => {
         incomeData.id = Date.now().toString();
         await push(ref(database, `users/${userId}/incomes`), incomeData);
         Alert.alert('Success', 'Income saved.');
+      }
+
+      // Restore savings from previous deductions if any
+      const savingsUsageRef = ref(database, `users/${userId}/savingsUsage`);
+      const savingsUsageSnapshot = await get(savingsUsageRef);
+      if (savingsUsageSnapshot.exists()) {
+        const usages = savingsUsageSnapshot.val();
+        let remainingIncome = amountValue;
+
+        for (const usageKey in usages) {
+          if (remainingIncome <= 0) break;
+
+          const usage = usages[usageKey];
+          const usageAmount = parseFloat(usage.amount || 0);
+
+          if (usageAmount > 0) {
+            if (remainingIncome >= usageAmount) {
+              // Fully restore this deduction
+              await remove(ref(database, `users/${userId}/savingsUsage/${usageKey}`));
+              remainingIncome -= usageAmount;
+            } else {
+              // Partially restore
+              const newAmount = usageAmount - remainingIncome;
+              await update(ref(database, `users/${userId}/savingsUsage/${usageKey}`), {
+                amount: newAmount.toString(),
+                note: `Partially restored: ${usage.note}`
+              });
+              remainingIncome = 0;
+            }
+          }
+        }
       }
 
       // Allocate to savings goals if category is Salary

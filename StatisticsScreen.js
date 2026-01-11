@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { getDatabase, onValue, ref } from 'firebase/database';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BarChart, PieChart } from 'react-native-chart-kit';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -28,9 +28,12 @@ const StatisticsScreen = () => {
 
   const [income, setIncome] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [savings, setSavings] = useState([]);
+  const [savingsUsage, setSavingsUsage] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalExpenses, setTotalExpenses] = useState(0);
+  const [totalSavings, setTotalSavings] = useState(0);
   const [categoryBreakdown, setCategoryBreakdown] = useState({});
   const [netBalance, setNetBalance] = useState(0);
   const [timeFilter, setTimeFilter] = useState('monthly'); // 'weekly', 'monthly', 'yearly'
@@ -40,6 +43,8 @@ const StatisticsScreen = () => {
     const userId = auth.currentUser?.uid || 'guest';
     const incomeRef = ref(getDatabase(app), `/users/${userId}/incomes`);
     const expensesRef = ref(getDatabase(app), `/users/${userId}/expenses`);
+    const savingsGoalsRef = ref(getDatabase(app), `/users/${userId}/savingsGoals`);
+    const savingsUsageRef = ref(getDatabase(app), `/users/${userId}/savingsUsage`);
 
     const handleIncome = (snapshot) => {
       if (snapshot.exists()) {
@@ -49,9 +54,6 @@ const StatisticsScreen = () => {
           firebaseKey: key,
         }));
         setIncome(parsed);
-        const incomeTotal = parsed.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
-        setTotalIncome(incomeTotal);
-        setNetBalance(incomeTotal - totalExpenses);
       }
     };
 
@@ -63,33 +65,47 @@ const StatisticsScreen = () => {
           firebaseKey: key,
         }));
         setExpenses(parsed);
-        
-        const expenseTotal = parsed.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
-        setTotalExpenses(expenseTotal);
-        setNetBalance(totalIncome - expenseTotal);
-        
-        // Calculate category breakdown
-        const breakdown = {};
-        parsed.forEach(item => {
-          const category = item.category || 'Other';
-          const amount = parseFloat(item.amount || 0);
-          if (breakdown[category]) {
-            breakdown[category] += amount;
-          } else {
-            breakdown[category] = amount;
-          }
-        });
-        setCategoryBreakdown(breakdown);
+      }
+    };
+
+    const handleSavingsGoals = (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        // Convert savings goals to savings entries with savedAmount as amount
+        const savingsEntries = Object.entries(data).map(([key, value]) => ({
+          ...value,
+          amount: value.savedAmount || 0,
+          date: value.createdAt || new Date().toISOString().split('T')[0], // Use createdAt or current date
+          firebaseKey: key,
+        }));
+        setSavings(savingsEntries);
+      } else {
+        setSavings([]);
+      }
+    };
+
+    const handleSavingsUsage = (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const parsed = Object.entries(data).map(([key, value]) => ({
+          ...value,
+          firebaseKey: key,
+        }));
+        setSavingsUsage(parsed);
+      } else {
+        setSavingsUsage([]);
       }
     };
 
     onValue(incomeRef, handleIncome);
     onValue(expensesRef, handleExpenses);
+    onValue(savingsGoalsRef, handleSavingsGoals);
+    onValue(savingsUsageRef, handleSavingsUsage);
 
     return () => {
       // Cleanup listeners if necessary
     };
-  }, [totalIncome, totalExpenses]);
+  }, []);
 
   useEffect(() => {
     const budgetsRef = ref(getDatabase(app), 'budgets/');
@@ -124,9 +140,19 @@ const StatisticsScreen = () => {
       });
     } else {
       const now = new Date();
-      let startDate;
+      let startDate, endDate;
       if (timeFilter === 'weekly') {
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        // Calculate current week (Monday to Sunday)
+        const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+        const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // Adjust to get Monday
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() + mondayOffset);
+        endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
+        return data.filter(item => {
+          const itemDate = new Date(item.date);
+          return itemDate >= startDate && itemDate <= endDate;
+        });
       } else if (timeFilter === 'monthly') {
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       } else if (timeFilter === 'yearly') {
@@ -140,10 +166,24 @@ const StatisticsScreen = () => {
 
   const filteredIncome = getFilteredData(income);
   const filteredExpenses = getFilteredData(expenses);
+  const filteredSavings = savings; // No date filtering for savings as they are cumulative
 
-  const filteredTotalIncome = filteredIncome.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+  const filteredTotalIncome = filteredIncome.filter(item => item.category !== 'Savings').reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
   const filteredTotalExpenses = filteredExpenses.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
-  const filteredNetBalance = filteredTotalIncome - filteredTotalExpenses;
+  const filteredTotalExpensesConverted = filteredExpenses.reduce((sum, item) => sum + convertFromPKR(parseFloat(item.amount || 0), currency), 0);
+  const filteredTotalSavings = filteredSavings.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+
+  // Dynamic Savings Calculation (filtered by selected date range)
+  const totalSavingsUsed = useMemo(() => getFilteredData(savingsUsage)
+    .reduce((sum, item) => sum + parseFloat(item.amount || 0), 0), [savingsUsage, selectedStartDate, selectedEndDate, selectedMonth, selectedYear, timeFilter]);
+
+  const totalSavingsIncome = useMemo(() => filteredIncome
+    .filter(item => item.category === 'Savings')
+    .reduce((sum, item) => sum + parseFloat(item.amount || 0), 0), [filteredIncome]);
+
+  const availableSavings = useMemo(() => totalSavingsIncome - totalSavingsUsed, [totalSavingsIncome, totalSavingsUsed]);
+
+  const filteredNetBalance = (filteredTotalIncome - filteredTotalExpenses) + availableSavings;
 
   const filteredCategoryBreakdown = {};
   filteredExpenses.forEach(item => {
@@ -157,8 +197,8 @@ const StatisticsScreen = () => {
   });
 
   const getCategoryPercentage = (categoryAmount) => {
-    if (filteredTotalExpenses === 0) return 0;
-    return ((categoryAmount / filteredTotalExpenses) * 100).toFixed(1);
+    if (filteredTotalExpensesConverted === 0) return 0;
+    return ((categoryAmount / filteredTotalExpensesConverted) * 100).toFixed(1);
   };
 
   const getBalanceColor = () => {
@@ -169,7 +209,19 @@ const StatisticsScreen = () => {
     let labels = [];
     let data = [];
 
-    if (selectedStartDate && selectedEndDate) {
+    if (timeFilter === 'yearly') {
+      // Always show current year months for yearly filter
+      const now = new Date();
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      labels = monthNames;
+      data = monthNames.map((_, month) => {
+        const monthExpenses = filteredExpenses.filter(expense => {
+          const expenseDate = new Date(expense.date);
+          return expenseDate.getMonth() === month && expenseDate.getFullYear() === now.getFullYear();
+        }).reduce((sum, expense) => sum + convertFromPKR(parseFloat(expense.amount || 0), currency), 0);
+        return monthExpenses;
+      });
+    } else if (selectedStartDate && selectedEndDate) {
       const start = new Date(selectedStartDate);
       const end = new Date(selectedEndDate);
       const diffTime = Math.abs(end - start);
@@ -221,9 +273,15 @@ const StatisticsScreen = () => {
     } else {
       const now = new Date();
       if (timeFilter === 'weekly') {
-        // Last 7 days
-        for (let i = 6; i >= 0; i--) {
-          const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        // Current week (Monday to Sunday)
+        const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+        const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // Adjust to get Monday
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() + mondayOffset);
+
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(startOfWeek);
+          date.setDate(startOfWeek.getDate() + i);
           const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
           labels.push(dayName);
           const dayExpenses = filteredExpenses.filter(expense => {
@@ -318,6 +376,13 @@ const StatisticsScreen = () => {
             <Text style={[styles.summaryLabel, { color: isDarkMode ? '#ccc' : '#666' }]}>Total Expenses</Text>
             <Text style={[styles.summaryAmount, { color: '#dc3545' }]}>
               {formatAmount(filteredTotalExpenses)}
+            </Text>
+          </View>
+
+          <View style={[styles.summaryCard, { backgroundColor: isDarkMode ? '#1E1E1E' : '#fff' }]}>
+            <Text style={[styles.summaryLabel, { color: isDarkMode ? '#ccc' : '#666' }]}>Available Savings</Text>
+            <Text style={[styles.summaryAmount, { color: '#007bff' }]}>
+              {formatAmount(availableSavings)}
             </Text>
           </View>
         </View>
@@ -643,4 +708,3 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
 });
 
 export default StatisticsScreen;
-

@@ -1,9 +1,7 @@
-// AddExpenseScreen.js
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { get, push, ref, update } from "firebase/database";
+import { get, push, ref, remove, update } from "firebase/database";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, Keyboard, KeyboardAvoidingView,
@@ -12,7 +10,6 @@ import {
   StatusBar,
   StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View
 } from 'react-native';
-
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppContext } from '../../AppContext';
 import { auth, database } from '../../firebaseConfig';
@@ -25,9 +22,8 @@ const initialCategories = [
 const AddExpenseScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { isDarkMode, theme, themeColors, formatAmount, currency, convertFromPKR, convertToPKR } = useAppContext();
+  const { isDarkMode, themeColors, formatAmount, refreshExpenses } = useAppContext();
 
-  const [title, setTitle] = useState("");
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(new Date());
@@ -37,11 +33,113 @@ const AddExpenseScreen = () => {
   const [customCategory, setCustomCategory] = useState('');
   const [useCustomCategory, setUseCustomCategory] = useState(false);
   const [categories, setCategories] = useState(initialCategories);
-  const [showIncomeExceededModal, setShowIncomeExceededModal] = useState(false);
-  const [incomeExceededData, setIncomeExceededData] = useState({});
+  
+  // Modal State
+  const [showExceededModal, setShowExceededModal] = useState(false);
+  const [modalConfig, setModalConfig] = useState(null);
+
+  // ---------------------------------------------------------
+  // 1. SMART SAVE FUNCTION (Self-Cleaning)
+  // ---------------------------------------------------------
+  const saveExpense = useCallback(async (expenseData, exceedingAmount) => {
+    try {
+      const userId = auth.currentUser?.uid || 'guest';
+      const expenseKey = params?.id;
+
+      // A. AUTO-CLEANUP: If Editing, Delete Old Associations First
+      if (expenseKey) {
+        const oldExpenseRef = ref(database, `users/${userId}/expenses/${expenseKey}`);
+        const oldSnapshot = await get(oldExpenseRef);
+
+        if (oldSnapshot.exists()) {
+          const oldData = oldSnapshot.val();
+
+          // 1. Delete linked Savings Usage
+          if (oldData.savingsUsageKey) {
+            console.log("Auto-deleting old savings usage:", oldData.savingsUsageKey);
+            await remove(ref(database, `users/${userId}/savingsUsage/${oldData.savingsUsageKey}`));
+          }
+
+          // 2. Refund Old Budgets
+          if (oldData.budgetIds && Array.isArray(oldData.budgetIds)) {
+             for (const budgetId of oldData.budgetIds) {
+                const bRef = ref(database, `users/${userId}/budgets/${budgetId}`);
+                const bSnap = await get(bRef);
+                if (bSnap.exists()) {
+                   const bData = bSnap.val();
+                   const refundedUsed = Math.max(0, (bData.used || 0) - parseFloat(oldData.amount));
+                   await update(bRef, { used: refundedUsed });
+                }
+             }
+          }
+        }
+      }
+
+      // B. BUDGET CHECK
+      const budgetsRef = ref(database, `users/${userId}/budgets`);
+      const snapshot = await get(budgetsRef);
+      const budgetsData = snapshot.exists() ? snapshot.val() : {};
+
+      const category = expenseData.category.trim();
+      const amountValue = parseFloat(expenseData.amount);
+
+      // C. CHARGE NEW BUDGETS
+      const newBudgetIds = [];
+      for (const budgetId in budgetsData) {
+        const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
+        if (budgetCategory === category.toLowerCase()) {
+          const currentUsed = budgetsData[budgetId].used || 0;
+          const budgetLimit = parseFloat(budgetsData[budgetId].amount || 0);
+
+          let newUsed = currentUsed + amountValue;
+
+          // Auto-increase limit if we exceeded
+          if (newUsed > budgetLimit) {
+             await update(ref(database, `users/${userId}/budgets/${budgetId}`), { amount: newUsed.toString() });
+          }
+
+          await update(ref(database, `users/${userId}/budgets/${budgetId}`), { used: newUsed });
+          newBudgetIds.push(budgetId);
+        }
+      }
+      expenseData.budgetIds = newBudgetIds;
+
+      // D. CREATE NEW SAVINGS USAGE
+      if (exceedingAmount > 0) {
+        const savingsUsageRef = await push(ref(database, `users/${userId}/savingsUsage`), {
+          amount: exceedingAmount.toString(),
+          date: expenseData.date,
+          category: 'Goal savings',
+          note: `Deducted for expense exceeding income by ${formatAmount(exceedingAmount)}`,
+          time: expenseData.time,
+        });
+        expenseData.savingsUsageKey = savingsUsageRef.key;
+      } else {
+        expenseData.savingsUsageKey = null;
+      }
+
+      // E. SAVE EXPENSE RECORD
+      if (expenseKey) {
+        await update(ref(database, `users/${userId}/expenses/${expenseKey}`), expenseData);
+        Alert.alert('Updated', 'Expense updated successfully.');
+      } else {
+        await push(ref(database, `users/${userId}/expenses`), expenseData);
+        Alert.alert('Success', 'Expense saved.');
+      }
+
+      // Refresh expenses to ensure updated data is shown
+      await refreshExpenses();
+
+      router.back();
+
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Failed to save expense.');
+    }
+  }, [router, params, formatAmount]);
 
   useEffect(() => {
-    if (params?.firebaseKey && !hasPrefilled.current) {
+    if (params?.id && !hasPrefilled.current) {
       setAmount(params.amount?.toString() || '');
       setNote(params.note?.toString() || '');
       setDate(params.date ? new Date(params.date) : new Date());
@@ -50,53 +148,52 @@ const AddExpenseScreen = () => {
     }
   }, [params]);
 
+  // ---------------------------------------------------------
+  // 2. HANDLE SAVE UI LOGIC
+  // ---------------------------------------------------------
   const handleSave = useCallback(async () => {
+    // A. Validation
     if (!amount || (!selectedCategory && !customCategory)) {
       Alert.alert('Validation Error', 'Amount and Category are required.');
       return;
     }
-
     const amountValue = Number(amount);
     if (isNaN(amountValue) || amountValue <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid positive number.');
       setAmount('');
       return;
     }
-
-    // Check if the selected date is in the current month
     const now = new Date();
-    const selectedMonth = date.getMonth();
-    const selectedYear = date.getFullYear();
-    const nowMonth = now.getMonth();
-    const nowYear = now.getFullYear();
-    if (selectedMonth !== nowMonth || selectedYear !== nowYear) {
+    if (date.getMonth() !== now.getMonth() || date.getFullYear() !== now.getFullYear()) {
       Alert.alert('Invalid Date', 'You can only add expenses for the current month.');
       return;
     }
 
     const userId = auth.currentUser?.uid || 'guest';
-
-    // Get current month and year
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const currentYear = date.getFullYear();
+    const currentMonth = String(date.getMonth() + 1).padStart(2, '0');
     const currentMonthPrefix = `${currentYear}-${currentMonth}`;
 
-    // Fetch total income for current month
+    // B. Fetch Totals
     const incomeRef = ref(database, `users/${userId}/incomes`);
     const incomeSnapshot = await get(incomeRef);
     let totalIncome = 0;
+    let totalSavingsIncome = 0;
+
     if (incomeSnapshot.exists()) {
       const incomes = incomeSnapshot.val();
       for (const key in incomes) {
         const incomeDate = incomes[key].date || '';
-        if (incomeDate.startsWith(currentMonthPrefix)) {
+        const category = incomes[key].category || '';
+        if (incomeDate.startsWith(currentMonthPrefix) && category !== 'Savings') {
           totalIncome += parseFloat(incomes[key].amount || 0);
+        }
+        if (category === 'Savings') {
+          totalSavingsIncome += parseFloat(incomes[key].amount || 0);
         }
       }
     }
 
-    // Fetch total expenses for current month
     const expensesRef = ref(database, `users/${userId}/expenses`);
     const expensesSnapshot = await get(expensesRef);
     let totalExpenses = 0;
@@ -110,189 +207,147 @@ const AddExpenseScreen = () => {
       }
     }
 
-    // If editing, subtract the old amount from totalExpenses
-    if (params?.firebaseKey) {
-      const oldExpenseRef = ref(database, `users/${userId}/expenses/${params.firebaseKey}`);
+    // C. Edit Logic (Calculate True Impact)
+    let oldSavingsAmount = 0;
+    const expenseKey = params?.id;
+    if (expenseKey) {
+      const oldExpenseRef = ref(database, `users/${userId}/expenses/${expenseKey}`);
       const oldExpenseSnapshot = await get(oldExpenseRef);
       if (oldExpenseSnapshot.exists()) {
-        const oldAmount = parseFloat(oldExpenseSnapshot.val().amount || 0);
-        totalExpenses -= oldAmount;
+        const oldExpense = oldExpenseSnapshot.val();
+
+        // Remove old amount from Total Expenses
+        totalExpenses -= parseFloat(oldExpense.amount || 0);
+
+        // Find old savings amount (just for math)
+        if (oldExpense.savingsUsageKey) {
+           const oldUsageSnap = await get(ref(database, `users/${userId}/savingsUsage/${oldExpense.savingsUsageKey}`));
+           if (oldUsageSnap.exists()) {
+              oldSavingsAmount = parseFloat(oldUsageSnap.val().amount || 0);
+           }
+        }
       }
     }
 
-    // Check if adding this expense exceeds total income
-    if (totalExpenses + amountValue > totalIncome) {
-      const shouldProceed = await new Promise((resolve) => {
-        setIncomeExceededData({
-          totalIncome,
-          totalExpenses,
-          newExpense: amountValue,
-          onProceed: () => resolve(true),
-          onCancel: () => resolve(false),
-        });
-        setShowIncomeExceededModal(true);
-      });
-      if (!shouldProceed) return;
-    }
-
     const expenseData = {
-      title,
-      amount: amountValue.toString(),
+      amount: amountValue,
       category: useCustomCategory ? customCategory : selectedCategory,
       note,
       date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
       time: new Date().toTimeString().split(' ')[0],
     };
 
-    try {
-      const userId = auth.currentUser?.uid || 'guest';
+    // D. CHECK BUDGET EXCEEDANCE FIRST
+    const budgetsRef = ref(database, `users/${userId}/budgets`);
+    const budgetsSnapshot = await get(budgetsRef);
+    const budgetsData = budgetsSnapshot.exists() ? budgetsSnapshot.val() : {};
+    const category = expenseData.category.trim();
+    let budgetExceedingAmount = 0;
 
-      // Helper function to check budget exceedance and handle alert
-      const checkBudgetExceedance = (budgetsData, category, amountValue) => {
-        return new Promise((resolve) => {
-          const exceedingCategories = [];
-          for (const budgetId in budgetsData) {
-            const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
-            if (budgetCategory === category.toLowerCase()) {
-              const currentUsed = budgetsData[budgetId].used || 0;
-              const budgetAmount = parseFloat(budgetsData[budgetId].amount || 0);
-              if (currentUsed + amountValue > budgetAmount) {
-                exceedingCategories.push(budgetsData[budgetId].category);
-              }
-            }
-          }
-          if (exceedingCategories.length > 0) {
-            Alert.alert(
-              'Budget Limit Exceeded',
-              `Adding this expense will exceed the budget limit for: ${exceedingCategories.join(', ')}. Do you want to proceed and automatically increase the budget?`,
-              [
-                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-                { text: 'Proceed', onPress: () => resolve(true) },
-              ]
-            );
-          } else {
-            resolve(true);
-          }
-        });
-      };
-
-      // Helper function to increase budget amounts for exceeding categories
-      const increaseBudgets = async (budgetsData, category, amountValue) => {
-        for (const budgetId in budgetsData) {
-          const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
-          if (budgetCategory === category.toLowerCase()) {
-            const currentUsed = budgetsData[budgetId].used || 0;
-            const budgetAmount = parseFloat(budgetsData[budgetId].amount || 0);
-            if (currentUsed + amountValue > budgetAmount) {
-              const newAmount = currentUsed + amountValue;
-              await update(ref(database, `users/${userId}/budgets/${budgetId}`), { amount: newAmount.toString() });
-            }
-          }
+    for (const budgetId in budgetsData) {
+      const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
+      if (budgetCategory === category.toLowerCase()) {
+        const currentUsed = budgetsData[budgetId].used || 0;
+        const budgetLimit = parseFloat(budgetsData[budgetId].amount || 0);
+        const newUsed = currentUsed + amountValue;
+        if (newUsed > budgetLimit) {
+          budgetExceedingAmount = Math.min(amountValue, newUsed - budgetLimit);
+          break; // Assuming one budget per category
         }
-      };
+      }
+    }
 
-      if (params?.firebaseKey) {
-        // Update existing expense
-        const oldExpenseRef = ref(database, `users/${userId}/expenses/${params.firebaseKey}`);
-        const oldExpenseSnapshot = await get(oldExpenseRef);
-        if (oldExpenseSnapshot.exists()) {
-          const oldExpense = oldExpenseSnapshot.val();
-          const oldAmount = parseFloat(oldExpense.amount || 0);
-          const oldCategory = oldExpense.category;
+    if (budgetExceedingAmount > 0) {
+      // Calculate available savings
+      const savingsUsageRef = ref(database, `users/${userId}/savingsUsage`);
+      const savingsUsageSnapshot = await get(savingsUsageRef);
+      let totalSavingsUsed = 0;
+      if (savingsUsageSnapshot.exists()) {
+        const usages = savingsUsageSnapshot.val();
+        for (const key in usages) {
+          totalSavingsUsed += parseFloat(usages[key].amount || 0);
+        }
+      }
+      // "Refund" the old savings usage locally
+      totalSavingsUsed -= oldSavingsAmount;
+      const availableSavings = totalSavingsIncome - totalSavingsUsed;
 
-          // Refund old amount from old budgets
-          if (oldExpense.budgetIds && Array.isArray(oldExpense.budgetIds)) {
-            for (const budgetId of oldExpense.budgetIds) {
-              const budgetRef = ref(database, `users/${userId}/budgets/${budgetId}`);
-              const budgetSnapshot = await get(budgetRef);
-              if (budgetSnapshot.exists()) {
-                const budgetData = budgetSnapshot.val();
-                const currentUsed = budgetData.used || 0;
-                const newUsed = Math.max(0, currentUsed - oldAmount);
-                await update(budgetRef, { used: newUsed });
-              }
-            }
+      setModalConfig({
+        type: 'budget',
+        budgetExceedingAmount,
+        availableSavings,
+        canProceed: budgetExceedingAmount <= availableSavings,
+        onProceed: async () => {
+          if (budgetExceedingAmount <= availableSavings) {
+            setShowExceededModal(false);
+            await saveExpense(expenseData, budgetExceedingAmount);
+            setModalConfig(null);
           }
+        },
+        onCancel: () => {
+          setModalConfig(null);
+        },
+      });
+
+      setShowExceededModal(true);
+      return;
+    }
+
+    // E. CHECK INCOME EXCEEDANCE
+    if (totalExpenses + amountValue > totalIncome) {
+      
+      // 1. Calculate TOTAL deficit
+      const totalDeficit = (totalExpenses + amountValue) - totalIncome;
+
+      // 2. THE FIX: Cap the deduction at the expense amount itself
+      // If we are deep in debt, we only deduct what we just spent (10), not the whole deficit (37).
+      const exceedingAmount = Math.min(amountValue, totalDeficit);
+
+      console.log(`🧮 [handleSave] Total Deficit: ${totalDeficit}`);
+      console.log(`✂️ [handleSave] Capped Deduction: ${exceedingAmount}`);
+
+      const savingsUsageRef = ref(database, `users/${userId}/savingsUsage`);
+      const savingsUsageSnapshot = await get(savingsUsageRef);
+      let totalSavingsUsed = 0;
+      if (savingsUsageSnapshot.exists()) {
+        const usages = savingsUsageSnapshot.val();
+        for (const key in usages) {
+          totalSavingsUsed += parseFloat(usages[key].amount || 0);
         }
-
-        // Check for budget exceedance before deducting new amount
-        const budgetsRef = ref(database, `users/${userId}/budgets`);
-        const snapshot = await get(budgetsRef);
-        if (snapshot.exists()) {
-          const budgetsData = snapshot.val();
-          const category = (useCustomCategory ? customCategory : selectedCategory).trim();
-          const shouldProceed = await checkBudgetExceedance(budgetsData, category, amountValue);
-          if (!shouldProceed) return;
-
-          // Increase budgets if proceeding
-          await increaseBudgets(budgetsData, category, amountValue);
-        }
-
-        // Deduct new amount from matching budgets
-        const budgetIds = [];
-        if (snapshot.exists()) {
-          const budgetsData = snapshot.val();
-          const category = (useCustomCategory ? customCategory : selectedCategory).trim();
-          console.log('Update expense category:', category);
-          for (const budgetId in budgetsData) {
-            const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
-            console.log('Budget category:', budgetCategory, 'for budgetId:', budgetId);
-            if (budgetCategory === category.toLowerCase()) {
-              const newUsed = (budgetsData[budgetId].used || 0) + amountValue;
-              await update(ref(database, `users/${userId}/budgets/${budgetId}`), { used: newUsed });
-              budgetIds.push(budgetId);
-              console.log('Deducted from budget:', budgetId, 'new used:', newUsed);
-            }
-          }
-        }
-        expenseData.budgetIds = budgetIds;
-        await update(ref(database, `users/${userId}/expenses/${params.firebaseKey}`), expenseData);
-        Alert.alert('Updated', 'Expense updated successfully.');
-      } else {
-        // Add new expense
-        expenseData.id = Date.now().toString();
-
-        // Check for budget exceedance before deducting
-        const budgetsRef = ref(database, `users/${userId}/budgets`);
-        const snapshot = await get(budgetsRef);
-        if (snapshot.exists()) {
-          const budgetsData = snapshot.val();
-          const category = (useCustomCategory ? customCategory : selectedCategory).trim();
-          const shouldProceed = await checkBudgetExceedance(budgetsData, category, amountValue);
-          if (!shouldProceed) return;
-
-          // Increase budgets if proceeding
-          await increaseBudgets(budgetsData, category, amountValue);
-        }
-
-        // Auto-deduct from all matching budgets
-        const budgetIds = [];
-        if (snapshot.exists()) {
-          const budgetsData = snapshot.val();
-          const category = (useCustomCategory ? customCategory : selectedCategory).trim();
-          console.log('Expense category:', category);
-          for (const budgetId in budgetsData) {
-            const budgetCategory = budgetsData[budgetId].category.trim().toLowerCase();
-            console.log('Budget category:', budgetCategory, 'for budgetId:', budgetId);
-            if (budgetCategory === category.toLowerCase()) {
-              const newUsed = (budgetsData[budgetId].used || 0) + amountValue;
-              await update(ref(database, `users/${userId}/budgets/${budgetId}`), { used: newUsed });
-              budgetIds.push(budgetId); // Collect all matching budget IDs
-              console.log('Deducted from budget:', budgetId, 'new used:', newUsed);
-            }
-          }
-        }
-        expenseData.budgetIds = budgetIds; // Store budget IDs on the expense
-        await push(ref(database, `users/${userId}/expenses`), expenseData);
-        Alert.alert('Success', 'Expense saved.');
       }
 
-      router.replace('/home');
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'Failed to save expense.');
+      // "Refund" the old savings usage locally
+      totalSavingsUsed -= oldSavingsAmount;
+
+      const availableSavings = totalSavingsIncome - totalSavingsUsed;
+
+      setModalConfig({
+        type: 'income',
+        totalIncome,
+        totalExpenses,
+        newExpense: amountValue,
+        exceedingAmount, 
+        availableSavings,
+        canProceed: exceedingAmount <= availableSavings,
+        onProceed: async () => {
+          if (exceedingAmount <= availableSavings) {
+            setShowExceededModal(false);
+            await saveExpense(expenseData, exceedingAmount);
+            setModalConfig(null);
+          }
+        },
+        onCancel: () => {
+          setModalConfig(null);
+        },
+      });
+
+      setShowExceededModal(true);
+      return;
     }
-  }, [title, amount, selectedCategory, customCategory, note, date, router, params, useCustomCategory]);
+
+    await saveExpense(expenseData, 0);
+
+  }, [amount, selectedCategory, customCategory, note, date, router, params, useCustomCategory, saveExpense]);
 
   const handleSaveCustomCategory = () => {
     if (customCategory.trim() !== '') {
@@ -304,9 +359,19 @@ const AddExpenseScreen = () => {
   };
 
   const handleAmountChange = (text) => {
-    const numericRegex = /^[0-9]*(\.[0-9]{0,2})?$/;
-    if (numericRegex.test(text)) {
-      setAmount(text);
+    // Replace commas with dots
+    let cleanedText = text.replace(/,/g, '.');
+    
+    if (cleanedText === '') {
+      setAmount('');
+      return;
+    }
+
+    // Allow typing numbers and dots
+    const numericRegex = /^[0-9]*\.?[0-9]{0,2}$/;
+    
+    if (numericRegex.test(cleanedText)) {
+      setAmount(cleanedText);
     }
   };
 
@@ -322,14 +387,14 @@ const AddExpenseScreen = () => {
         >
           <View style={styles.container}>
             <Text style={styles.title}>
-              {params?.firebaseKey ? 'Edit Expense' : 'Add Expense'}
+              {params?.id ? 'Edit Expense' : 'Add Expense'}
             </Text>
 
             <Text style={styles.label}>Amount</Text>
             <TextInput
               value={amount}
               onChangeText={handleAmountChange}
-              keyboardType="numeric"
+              keyboardType="decimal-pad" 
               style={[styles.input, styles.tealInput]}
               placeholder="Enter amount"
               placeholderTextColor={isDarkMode ? '#ccc' : '#aaa'}
@@ -394,8 +459,6 @@ const AddExpenseScreen = () => {
               </>
             )}
 
-
-
             <Text style={styles.label}>Note</Text>
             <TextInput
               value={note}
@@ -408,7 +471,7 @@ const AddExpenseScreen = () => {
 
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                <Text style={styles.saveText}>{params?.firebaseKey ? 'Update' : 'Save'}</Text>
+                <Text style={styles.saveText}>{params?.id ? 'Update' : 'Save'}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()}>
@@ -419,55 +482,76 @@ const AddExpenseScreen = () => {
         </KeyboardAvoidingView>
       </TouchableWithoutFeedback>
 
+      {/* MODAL */}
       <Modal
-        visible={showIncomeExceededModal}
+        visible={showExceededModal}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowIncomeExceededModal(false)}
+        onRequestClose={() => setShowExceededModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Income Exceeded</Text>
-            <Text style={styles.modalText}>
-              Adding this expense will exceed your total income.
-            </Text>
-            <View style={styles.modalDetails}>
-              <Text style={styles.modalDetailText}>
-                Total Income: {formatAmount(incomeExceededData.totalIncome || 0)}
-              </Text>
-              <Text style={styles.modalDetailText}>
-                Current Expenses: {formatAmount(incomeExceededData.totalExpenses || 0)}
-              </Text>
-              <Text style={styles.modalDetailText}>
-                New Expense: {formatAmount(incomeExceededData.newExpense || 0)}
-              </Text>
-              <Text style={styles.modalDetailText}>
-                Total After Addition: {formatAmount((incomeExceededData.totalExpenses || 0) + (incomeExceededData.newExpense || 0))}
-              </Text>
-            </View>
-            <Text style={styles.modalWarning}>
-              Do you want to proceed?
-            </Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => {
-                  setShowIncomeExceededModal(false);
-                  incomeExceededData.onCancel && incomeExceededData.onCancel();
-                }}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalProceedButton}
-                onPress={() => {
-                  setShowIncomeExceededModal(false);
-                  incomeExceededData.onProceed && incomeExceededData.onProceed();
-                }}
-              >
-                <Text style={styles.modalProceedText}>Proceed</Text>
-              </TouchableOpacity>
-            </View>
+            {modalConfig && (
+              <>
+                <Text style={styles.modalTitle}>
+                  {modalConfig.type === 'budget' ? 'Budget Exceeded' : 'Deduct from Savings'}
+                </Text>
+                <Text style={styles.modalText}>
+                  {modalConfig.type === 'budget'
+                    ? `This expense exceeds your budget by ${formatAmount(modalConfig.budgetExceedingAmount)}. You have ${formatAmount(modalConfig.availableSavings)} available in savings.`
+                    : `This expense exceeds your income by ${formatAmount(modalConfig.exceedingAmount)}. You have ${formatAmount(modalConfig.availableSavings)} available in savings.`
+                  }
+                </Text>
+                {modalConfig.type === 'income' && (
+                  <View style={styles.modalDetails}>
+                    <Text style={styles.modalDetailText}>
+                      Total Income: {formatAmount(modalConfig.totalIncome || 0)}
+                    </Text>
+                    <Text style={styles.modalDetailText}>
+                      Current Expenses: {formatAmount(modalConfig.totalExpenses || 0)}
+                    </Text>
+                    <Text style={styles.modalDetailText}>
+                      New Expense: {formatAmount(modalConfig.newExpense || 0)}
+                    </Text>
+                    <Text style={styles.modalDetailText}>
+                      Total After Addition: {formatAmount((modalConfig.totalExpenses || 0) + (modalConfig.newExpense || 0))}
+                    </Text>
+                    {modalConfig.exceedingAmount > 0 && (
+                      <Text style={styles.modalDetailText}>
+                        Exceeding Amount: {formatAmount(modalConfig.exceedingAmount)}
+                      </Text>
+                    )}
+                  </View>
+                )}
+                <Text style={styles.modalWarning}>
+                  Proceed?
+                </Text>
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={styles.modalCancelButton}
+                    onPress={() => {
+                      setShowExceededModal(false);
+                      setModalConfig(null);
+                    }}
+                  >
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalProceedButton, !modalConfig.canProceed && styles.modalProceedButtonDisabled]}
+                    onPress={() => {
+                      if (modalConfig.canProceed) {
+                        modalConfig.onProceed();
+                      }
+                    }}
+                    disabled={!modalConfig.canProceed}
+                  >
+                    <Text style={[styles.modalProceedText, !modalConfig.canProceed && styles.modalProceedTextDisabled]}>
+                      {modalConfig.canProceed ? 'Proceed' : 'Insufficient Savings'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -641,9 +725,15 @@ const getStyles = (isDarkMode, themeColors) => StyleSheet.create({
     marginLeft: 10,
     alignItems: 'center',
   },
+  modalProceedButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
   modalProceedText: {
     color: 'white',
     fontSize: 16,
     fontFamily: 'serif',
+  },
+  modalProceedTextDisabled: {
+    color: '#999',
   },
 });

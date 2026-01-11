@@ -1,0 +1,421 @@
+6MBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB                                      N/KK# Pseudo Code for Main Modules in BudgetMate App
+
+## 1. App Navigation Module (App.js)
+This module sets up the main navigation structure for the BudgetMate app using React Navigation.
+It creates a stack navigator with screens for Login, SignUp, and Budget, starting with the Login screen.
+The NavigationContainer wraps the entire app to enable navigation functionality.
+
+FUNCTION App():
+    IMPORT NavigationContainer, createStackNavigator FROM '@react-navigation/native'
+    CREATE Stack AS createStackNavigator()
+    
+    RETURN (
+        <NavigationContainer>
+            <Stack.Navigator initialRouteName="Login">
+                <Stack.Screen name="Login" component={LoginScreen} />
+                <Stack.Screen name="SignUp" component={SignUpScreen} />
+                <Stack.Screen name="Budget" component={BudgetScreen} />
+            </Stack.Navigator>
+        </NavigationContainer>
+    )
+
+## 2. Login Module (LoginScreen.js)
+This module handles user authentication with Firebase Auth, including login attempts and security features.
+It implements rate limiting after failed attempts and supports account reactivation via email links.
+The module also provides password reset functionality and handles various authentication states.
+
+COMPONENT LoginScreen():
+    // State variables
+    email = ""
+    password = ""
+    loading = false
+    passwordVisible = false
+    loginBlocked = false
+    blockTimer = 0
+    failedAttempts = 0
+    
+    // Deep link listener for reactivation
+    ON_APP_START:
+        LISTEN_FOR_DEEP_LINKS(url):
+            IF isSignInWithEmailLink(auth, url):
+                savedEmail = GET_FROM_ASYNC_STORAGE('reactivationEmail')
+                IF savedEmail EXISTS:
+                    user = signInWithEmailLink(auth, savedEmail, url)
+                    UPDATE_DATABASE(user.uid, {deactivated: false})
+                    REMOVE_FROM_ASYNC_STORAGE('reactivationEmail')
+                    SHOW_ALERT("Account reactivated")
+                    NAVIGATE_TO('/home')
+    
+    FUNCTION handleLogin():
+        IF loginBlocked OR email IS EMPTY OR password IS EMPTY:
+            RETURN
+        
+        SET loading = true
+        
+        TRY:
+            userCredential = signInWithEmailAndPassword(auth, email, password)
+            user = userCredential.user
+            
+            // Check deactivation
+            userData = GET_FROM_DATABASE(`/users/${user.uid}`)
+            IF userData.deactivated:
+                IF reactivation_pending IN ASYNC_STORAGE:
+                    UPDATE_DATABASE(user.uid, {deactivated: false})
+                    REMOVE_FROM_ASYNC_STORAGE('reactivation_pending')
+                    SHOW_ALERT("Account reactivated")
+                ELSE:
+                    SEND_PASSWORD_RESET_EMAIL(email)
+                    SET_ASYNC_STORAGE('reactivation_pending', true)
+                    SHOW_ALERT("Reactivation required - check email")
+                    SIGN_OUT()
+                    RETURN
+            
+            // Log activity
+            LOG_ACTIVITY(user.uid, 'login', {email: user.email, platform: OS})
+            
+            SET failedAttempts = 0
+            NAVIGATE_TO('/home')
+            
+        CATCH error:
+            SET loading = false
+            INCREMENT failedAttempts
+            IF failedAttempts >= 4:
+                SET loginBlocked = true
+                SET blockTimer = 15
+            SHOW_ERROR_MESSAGE(error)
+    
+    FUNCTION handleForgotPassword():
+        IF email IS EMPTY:
+            SHOW_ALERT("Enter email")
+            RETURN
+        SEND_PASSWORD_RESET_EMAIL(email)
+        SHOW_ALERT("Reset email sent")
+    
+    RENDER:
+        DISPLAY email input with envelope icon
+        DISPLAY password input with lock icon and visibility toggle
+        DISPLAY login button (disabled if blocked, shows timer)
+        DISPLAY forgot password link
+        DISPLAY signup link
+        IF loading: SHOW spinner
+
+## 3. SignUp Module (SignUpScreen.js)
+This module manages user registration with comprehensive password validation and security measures.
+It enforces strong password requirements and sends email verification upon successful signup.
+The module handles form validation, error states, and navigation to login after registration.
+
+COMPONENT SignupScreen():
+    // State variables
+    email = ""
+    password = ""
+    confirmPassword = ""
+    loading = false
+    error = null
+    passwordVisible = false
+    confirmPasswordVisible = false
+    
+    FUNCTION validatePassword(pwd):
+        IF LENGTH(pwd) < 8: RETURN "Too short"
+        IF NOT CONTAINS_UPPERCASE(pwd): RETURN "Needs uppercase"
+        IF NOT CONTAINS_LOWERCASE(pwd): RETURN "Needs lowercase"
+        IF NOT CONTAINS_NUMBER(pwd): RETURN "Needs number"
+        IF NOT CONTAINS_SPECIAL_CHAR(pwd): RETURN "Needs special char"
+        RETURN null
+    
+    FUNCTION handleSignUp():
+        SET error = null
+        
+        IF email IS EMPTY OR password IS EMPTY OR confirmPassword IS EMPTY:
+            SET error = "Fill all fields"
+            RETURN
+        
+        IF password != confirmPassword:
+            SET error = "Passwords don't match"
+            RETURN
+        
+        validationError = validatePassword(password)
+        IF validationError:
+            SET error = validationError
+            RETURN
+        
+        SET loading = true
+        
+        TRY:
+            userCredential = createUserWithEmailAndPassword(auth, email, password)
+            user = userCredential.user
+            
+            SEND_EMAIL_VERIFICATION(user)
+            SIGN_OUT(auth)
+            
+            SHOW_ALERT("Verify email sent")
+            NAVIGATE_TO('/login')
+            
+        CATCH error:
+            SET loading = false
+            SHOW_ALERT("Signup failed", error.message)
+    
+    RENDER:
+        DISPLAY email input with envelope icon
+        DISPLAY password input with lock icon and visibility toggle
+        DISPLAY confirm password input with lock icon and visibility toggle
+        IF error: DISPLAY error message
+        DISPLAY signup button
+        DISPLAY login link
+        IF loading: SHOW spinner
+
+## 4. Home/Dashboard Module (HomeScreen.js)
+This module serves as the main dashboard displaying expenses and income with filtering and search capabilities.
+It provides tabbed views for expenses and income, date range filtering, and real-time data updates.
+The module includes CRUD operations for financial entries and integrates with budget management.
+
+COMPONENT HomeScreen():
+    // State variables
+    expenses = []
+    income = []
+    activeTab = 'expenses'
+    balanceVisible = false
+    searchQuery = ""
+    showFilterModal = false
+    showDateModal = false
+    selectedDateRange = {startDate: currentMonthStart, endDate: currentMonthEnd}
+    currentMonthText = "Current Month Year"
+    // ... other filter states
+    
+    ON_COMPONENT_MOUNT:
+        // Fetch expenses
+        SUBSCRIBE_TO_DATABASE(`/users/${userId}/expenses`, (data) => {
+            SET expenses = PARSE_DATA(data)
+        })
+        
+        // Fetch income
+        SUBSCRIBE_TO_DATABASE(`/users/${userId}/incomes`, (data) => {
+            SET income = PARSE_DATA(data)
+        })
+        
+        // Handle URL params
+        IF type PARAM == 'income': SET activeTab = 'income'
+    
+    FUNCTION calculateTotals():
+        incomeTotal = SUM(income WHERE date IN selectedDateRange)
+        expenseTotal = SUM(expenses WHERE date IN selectedDateRange)
+        totalBalance = incomeTotal - expenseTotal
+        RETURN {incomeTotal, expenseTotal, totalBalance}
+    
+    FUNCTION filterData():
+        filtered = activeTab == 'expenses' ? expenses : income
+        filtered = FILTER_BY_DATE_RANGE(filtered, selectedDateRange)
+        filtered = FILTER_BY_SEARCH(filtered, searchQuery)
+        grouped = GROUP_BY_DATE(filtered)
+        RETURN grouped
+    
+    FUNCTION handleMonthSelect(monthIndex):
+        IF monthIndex IN selectedMonths:
+            REMOVE_FROM selectedMonths
+        ELSE:
+            ADD_TO selectedMonths
+    
+    FUNCTION applyFilter():
+        IF selectedDate:
+            SET selectedDateRange = {startDate: selectedDate, endDate: selectedDate}
+            SET currentMonthText = "Month Day, Year"
+        ELSE IF selectedMonth:
+            SET selectedDateRange = {startDate: monthStart, endDate: monthEnd}
+            SET currentMonthText = "Month Year"
+        ELSE IF selectedMonths:
+            SET selectedDateRange = {startDate: minMonthStart, endDate: maxMonthEnd}
+            SET currentMonthText = "Month1, Month2 Year"
+        
+        CLOSE_MODAL()
+    
+    FUNCTION deleteItem(firebaseKey, type):
+        item = FIND_ITEM_BY_KEY(list, firebaseKey)
+        
+        IF type == 'expenses':
+            // Refund budgets
+            FOR EACH budgetId IN item.budgetIds:
+                budget = GET_BUDGET(budgetId)
+                UPDATE_BUDGET(budgetId, {used: budget.used - item.amount})
+        
+        REMOVE_FROM_DATABASE(`/users/${userId}/${type}/${firebaseKey}`)
+        SHOW_ALERT("Deleted successfully")
+    
+    RENDER:
+        DISPLAY header with logo, month selector button, balance card
+        DISPLAY tab row (Expenses/Income)
+        IF data EXISTS:
+            DISPLAY search bar
+            DISPLAY total card (total expenditure/income)
+            FOR EACH dateGroup IN groupedData:
+                DISPLAY date label
+                FOR EACH item IN dateGroup:
+                    DISPLAY item card with category, amount, time, note toggle
+                    DISPLAY edit and delete buttons
+        ELSE:
+            DISPLAY empty state image and message
+
+        DISPLAY bottom navigation (Home, Budget, Plus button, Statistics, Settings)
+
+        IF showFilterModal: DISPLAY filter modal with year nav, month grid, apply/clear buttons
+        IF showDateModal: DISPLAY calendar modal
+
+## 5. Statistics Module (StatisticsScreen.js)
+This module provides comprehensive financial analytics with visual charts and time-based filtering.
+It displays income/expense summaries, category breakdowns, and spending trends over time.
+The module supports weekly, monthly, and yearly views with interactive charts and statistics.
+
+COMPONENT StatisticsScreen():
+    // State variables
+    income = []
+    expenses = []
+    budgets = []
+    totalIncome = 0
+    totalExpenses = 0
+    categoryBreakdown = {}
+    netBalance = 0
+    timeFilter = 'monthly' // 'weekly', 'monthly', 'yearly'
+    selectedCategory = null
+
+    ON_COMPONENT_MOUNT:
+        // Subscribe to income data
+        SUBSCRIBE_TO_DATABASE(`/users/${userId}/incomes`, (data) => {
+            SET income = PARSE_DATA(data)
+            SET totalIncome = SUM(income.amount)
+            SET netBalance = totalIncome - totalExpenses
+        })
+
+        // Subscribe to expenses data
+        SUBSCRIBE_TO_DATABASE(`/users/${userId}/expenses`, (data) => {
+            SET expenses = PARSE_DATA(data)
+            SET totalExpenses = SUM(expenses.amount)
+            SET netBalance = totalIncome - totalExpenses
+
+            // Calculate category breakdown
+            SET categoryBreakdown = GROUP_BY_CATEGORY(expenses)
+        })
+
+        // Subscribe to budgets data
+        SUBSCRIBE_TO_DATABASE('budgets/', (data) => {
+            SET budgets = PARSE_DATA(data)
+        })
+
+    FUNCTION getFilteredData(data, timeFilter):
+        IF timeFilter == 'weekly':
+            startDate = CURRENT_DATE - 7 DAYS
+        ELSE IF timeFilter == 'monthly':
+            startDate = FIRST_DAY_OF_CURRENT_MONTH
+        ELSE IF timeFilter == 'yearly':
+            startDate = FIRST_DAY_OF_CURRENT_YEAR
+        ELSE:
+            RETURN data // all time
+
+        RETURN FILTER data WHERE item.date >= startDate
+
+    FUNCTION getBarChartData():
+        IF timeFilter == 'weekly':
+            labels = LAST_7_DAYS_NAMES
+            data = EXPENSES_PER_DAY_FOR_LAST_7_DAYS
+        ELSE IF timeFilter == 'monthly':
+            labels = DAYS_OF_CURRENT_MONTH
+            data = EXPENSES_PER_DAY_FOR_CURRENT_MONTH
+        ELSE IF timeFilter == 'yearly':
+            labels = MONTH_NAMES
+            data = EXPENSES_PER_MONTH_FOR_CURRENT_YEAR
+
+        RETURN {labels, datasets: [{data}]}
+
+    FUNCTION getCategoryPercentage(categoryAmount):
+        IF totalExpenses == 0: RETURN 0
+        RETURN (categoryAmount / totalExpenses * 100).toFixed(1)
+
+    FUNCTION getBalanceColor():
+        IF netBalance >= 0: RETURN 'green'
+        ELSE: RETURN 'red'
+
+    RENDER:
+        DISPLAY title "Statistics"
+
+        // Time filter buttons
+        DISPLAY filter buttons: Weekly, Monthly, Yearly
+
+        // Summary cards
+        DISPLAY total income card
+        DISPLAY total expenses card
+
+        // Net balance card
+        DISPLAY net balance card with color based on positive/negative
+
+        // Bar chart section
+        DISPLAY "Expenses Over Time" title
+        IF barChartData EXISTS:
+            DISPLAY horizontal scrollable bar chart
+        ELSE:
+            DISPLAY "No expenses recorded yet"
+
+        // Category breakdown section
+        DISPLAY "Expenses by Category" title
+        IF pieData EXISTS:
+            DISPLAY horizontal scrollable pie chart
+            FOR EACH category IN sortedCategoryBreakdown:
+                DISPLAY category item with icon, name, amount, percentage
+        ELSE:
+            DISPLAY "No expenses recorded yet"
+
+        // Quick stats section
+        DISPLAY "Quick Stats" title
+        DISPLAY stats row:
+            - Number of income entries
+            - Number of expense entries
+            - Number of categories used
+
+## 6. Budget Module (BudgetScreen.js)
+This module enables users to create and manage spending budgets for different expense categories.
+It tracks budget usage in real-time and provides visual feedback on remaining amounts.
+The module supports adding, editing, and deleting budgets with confirmation dialogs for safety.
+
+COMPONENT BudgetScreen():
+    // State variables
+    category = ""
+    amount = ""
+    budgets = []
+
+    ON_COMPONENT_MOUNT:
+        // Subscribe to budgets data
+        SUBSCRIBE_TO_DATABASE(`/users/${userId}/budgets`, (data) => {
+            SET budgets = PARSE_DATA(data)
+        })
+
+    FUNCTION addBudget():
+        IF category IS EMPTY OR amount IS EMPTY: RETURN
+
+        amountInPKR = CONVERT_TO_PKR(amount)
+        PUSH_TO_DATABASE(`/users/${userId}/budgets`, {
+            category: category,
+            amount: amountInPKR,
+            used: 0
+        })
+        SET category = ""
+        SET amount = ""
+
+    FUNCTION handleDelete(id):
+        SHOW_CONFIRMATION_DIALOG("Delete Budget", "Are you sure?", [
+            {text: "Cancel"},
+            {text: "Delete", onPress: () => REMOVE_FROM_DATABASE(`/users/${userId}/budgets/${id}`)}
+        ])
+
+    RENDER:
+        DISPLAY title "Manage Budgets"
+
+        // Add budget form
+        DISPLAY category input field
+        DISPLAY amount input field (numeric, positive numbers and decimals only)
+        DISPLAY "Add Budget" button
+
+        // Budgets list
+        FOR EACH budget IN budgets:
+            DISPLAY budget card with:
+                - Category name
+                - Total amount
+                - Used amount
+                - Remaining amount
+                - Edit button (navigates to edit screen)
+                - Delete button (with confirmation)
